@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: linear-gradient(180deg, #fff9f0 0%, #fff3e0 100%);
+  color: #3a3a3a;
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+
+@layer components {
+  .app-shell {
+    @apply mx-auto flex min-h-screen max-w-[480px] flex-col px-4 pb-24 pt-5;
+  }
+  .card {
+    @apply mb-3.5 rounded-card bg-white p-5 shadow-card;
+  }
+  .btn {
+    @apply mb-3 block w-full rounded-btn px-4 py-4 text-center text-[17px] font-bold text-white transition-transform active:scale-[0.97] disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-accent;
+  }
+  .btn-a {
+    @apply bg-a;
+  }
+  .btn-b {
+    @apply bg-b;
+  }
+  .btn-outline {
+    @apply border-2 border-[#eee] bg-white text-ink;
+  }
+  .btn-ghost {
+    @apply bg-transparent p-2.5 font-medium text-soft;
+  }
+  .item-tile {
+    @apply cursor-pointer rounded-2xl border-2 border-[#f0f0f0] bg-white p-4 text-center transition-all active:scale-95 active:bg-a-light;
+  }
+  .who-badge {
+    @apply inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-[13px] font-bold shadow-card;
+  }
+}

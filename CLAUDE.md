@@ -1,0 +1,68 @@
+# CLAUDE.md — 따로 또 같이 (쌍둥이 선택 기록 앱)
+
+이 파일은 프로젝트 루트에 두고 Claude Code가 매 세션 시작 시 참고하는 컨텍스트 문서입니다. **지금은 Phase 1만 구현합니다.** Phase 2/3, 사업화, 연인용 확장 기능은 이 시점에 손대지 마세요.
+
+## 프로젝트 개요
+
+일란성 쌍둥이(및 형제자매) 자녀가 영상·과자·장난감 등을 고를 때, 상대 선택을 보기 전에 각자 블라인드로 먼저 고르고 → 동시 공개 → 다르면 정해진 조율 도구로 해결하는 가족용 웹앱. 목적은 아이들이 서로 눈치 보며 양보하는 패턴을 줄이고, 부모가 각 아이의 진짜 취향과 양보 패턴을 데이터로 파악하는 것.
+
+- **전체 요구사항**: PRD 참조 (아래 "참고 문서" 링크)
+- **이번 스프린트 범위**: 이 문서의 "Phase 1 스코프" 섹션만
+
+## 확정된 기술 결정 (재논의 불필요)
+
+| 항목 | 결정 |
+|---|---|
+| 배포 형태 | PWA (네이티브 앱 아님) |
+| 프론트엔드 | Next.js (App Router) + React + Tailwind CSS |
+| 백엔드/DB | Supabase (PostgreSQL + Auth + Storage + Realtime), 무료 티어 |
+| 인증 — 부모 | Supabase Auth 이메일 로그인 |
+| 인증 — 자녀 | 이메일 없음. `profile_id + 4자리 PIN` → 커스텀 세션(역할 클레임 `role: child`) |
+| 권한 분리 | 프론트엔드 라우팅 차단 + **RLS(Row Level Security)로 DB 레벨 차단**이 필수. 프론트엔드만으로 막지 않음 |
+| 실시간 동기화 | Supabase Realtime (Broadcast + Presence), 3초 폴링 폴백 |
+| 사진 AI 분석 | Claude API Vision. **자동 호출 금지** — "AI로 분류하기" 버튼 클릭 시에만 호출, 항목명 기준 캐싱으로 재호출 최소화 |
+| 소프트 삭제 | 카테고리/항목은 하드 삭제 대신 `is_active=false` |
+| 확장성 원칙 | 전 테이블 `family_id` 기반. 코드에 "가족은 하나뿐"이라는 가정(하드코딩된 family_id, 환경변수 등)을 절대 심지 않을 것 |
+
+## Phase 1 스코프 (지금 구현할 것)
+
+- [ ] **인증/역할 분리**: 부모 회원가입·로그인, 자녀 프로필 생성(이름+아바타+PIN), 자녀 PIN 로그인
+- [ ] **RLS 정책**: 자녀 세션은 분석/대시보드 관련 테이블 SELECT 자체가 불가능하도록 DB 레벨 설정
+- [ ] **블라인드 선택 → 동시 공개 → 조율 흐름**: 기존 프로토타입(`reference/twin-choice-app-prototype.html`, 아래 참조) 로직을 정식 백엔드로 이관
+  - 조율 도구 4종: 룰렛(랜덤 50:50), 번갈아하기(카테고리별 최근 승자 기억), 둘 다 하기, 직접 정하기
+- [ ] **기록(히스토리)**: 자녀 화면에는 "무엇을 골랐는지"만, 통계/양보지수는 절대 노출 금지
+- [ ] **개인정보 최소 요건**: 광고/추적 SDK 미포함, 부모가 자녀 데이터 전체 삭제 가능, 사진 비공개 스토리지
+
+**Phase 1에 포함하지 않는 것** (다음 스프린트): 사진 업로드+AI 분류, 부모 대시보드(양보 지수·추이 그래프·사진 아카이브), 카테고리 커스터마이징, 푸시 알림.
+
+## 데이터 모델
+
+```sql
+families(id, name, created_at)
+profiles(id, family_id, role[parent|child], name, avatar, pin_hash, created_at)
+categories(id, family_id, name, emoji, is_active)
+items(id, category_id, name, emoji, is_active)
+rounds(id, family_id, category_id, started_by, status[waiting|revealed|resolved], created_at)
+choices(id, round_id, profile_id, item_id, submitted_at)
+resolutions(id, round_id, type[roulette|turn|both|manual], winner_profile_id, conceded_profile_id, resolved_at)
+photos(id, family_id, profile_id, round_id, item_id, storage_path, ai_category, ai_label, confirmed, created_at)
+  -- photos 테이블은 스키마만 Phase 1에서 만들어두고 실제 기능은 Phase 2에서 연결
+```
+
+RLS 정책 예시 방향(의사코드):
+- `profiles`: 자신의 `family_id` row만 SELECT
+- `choices`, `rounds`: 같은 `family_id`의 부모·자녀 모두 SELECT/INSERT 가능(단, 상대가 제출하기 전까지는 `item_id`를 마스킹해서 반환하는 뷰 또는 API 레벨 필터 필요 — 블라인드 유지)
+- 향후 만들어질 `concession_logs`/`analytics_*` 테이블: `role = 'parent'`만 SELECT 가능
+
+## 참고 문서 (개발 착수 전 합의된 내용)
+
+- **PRD**: 전체 요구사항, User Story, Success Metrics — https://claude.ai/code/artifact/b739e38e-055f-464f-b350-2a98213d2384
+- **개발 착수 전 결정 사항**: 배포형태·비용정책·확장성 설계의 근거 — https://claude.ai/code/artifact/c3811163-c11d-4f9a-a14b-0d6e8c99f8a9
+- **기존 프로토타입**: 블라인드 선택/조율 UI·로직의 1차 검증 버전(브라우저 저장소 기반, 정식 인증 없음). 이 프로젝트에 `reference/` 폴더로 복사해두고 UI·상태 흐름 참고용으로만 사용 — 저장 로직은 Supabase로 전면 교체.
+
+## 코딩 시 주의사항
+
+1. **양보 지수·통계는 자녀 화면 어디에도 절대 노출하지 말 것.** 컴포넌트 트리 상에서도 자녀 role일 때 해당 컴포넌트가 아예 마운트되지 않아야 함 (조건부 `display:none`이 아니라 렌더링 자체를 스킵).
+2. **블라인드 유지**: 상대방이 제출하기 전, API 응답에 상대 선택 데이터를 절대 포함시키지 말 것(프론트에서 숨기는 방식 금지 — 응답 자체에서 제외).
+3. 사진 업로드 UI를 만들 때 "사람 없이 물건만 찍어주세요" 안내 문구를 촬영 화면에 기본 노출(Phase 2 대비 지금 문구만 넣어둬도 무방).
+4. 새 마이그레이션 작성 시 `family_id` 없는 테이블을 추가하지 말 것.

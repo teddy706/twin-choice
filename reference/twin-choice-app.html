@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>따로 또 같이</title>
+<style>
+  :root {
+    --a-color: #FF6B8A;
+    --a-light: #FFE1E8;
+    --b-color: #2EC4B6;
+    --b-light: #DFF7F4;
+    --bg: #FFF9F0;
+    --card: #FFFFFF;
+    --text: #3A3A3A;
+    --text-soft: #8A8A8A;
+    --accent: #FFB84D;
+    --radius: 22px;
+    --shadow: 0 6px 18px rgba(0,0,0,0.08);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    background: linear-gradient(180deg, #FFF9F0 0%, #FFF3E0 100%);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  #app {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+    padding: 20px 16px 90px;
+    display: flex;
+    flex-direction: column;
+  }
+  h1 { font-size: 24px; margin: 4px 0 20px; text-align: center; }
+  h2 { font-size: 19px; margin: 0 0 14px; }
+  .sub { color: var(--text-soft); font-size: 14px; text-align: center; margin-top: -14px; margin-bottom: 20px; }
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 20px;
+    margin-bottom: 14px;
+  }
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 18px;
+    border: none;
+    border-radius: 16px;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-bottom: 12px;
+    transition: transform 0.1s ease;
+    font-family: inherit;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-a { background: var(--a-color); color: white; }
+  .btn-b { background: var(--b-color); color: white; }
+  .btn-outline { background: white; border: 2px solid #eee; color: var(--text); }
+  .btn-ghost { background: transparent; color: var(--text-soft); font-weight: 500; padding: 10px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .item-tile {
+    background: white;
+    border: 2px solid #f0f0f0;
+    border-radius: 18px;
+    padding: 16px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .item-tile:active { transform: scale(0.95); background: var(--a-light); }
+  .item-emoji { font-size: 34px; display: block; margin-bottom: 6px; }
+  .item-name { font-size: 13px; font-weight: 600; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .who-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: white; border-radius: 20px; padding: 6px 14px;
+    font-size: 13px; font-weight: 700; box-shadow: var(--shadow);
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .spinner {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 5px solid #f0f0f0; border-top-color: var(--accent);
+    animation: spin 0.9s linear infinite; margin: 24px auto;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .center { text-align: center; }
+  .reveal-row { display: flex; justify-content: center; align-items: center; gap: 18px; margin: 18px 0; }
+  .reveal-card {
+    flex: 1; border-radius: 18px; padding: 18px 10px; text-align: center;
+  }
+  .reveal-emoji { font-size: 46px; display: block; margin-bottom: 8px; }
+  .vs { font-size: 13px; color: var(--text-soft); font-weight: 700; }
+  .badge-match { background: #E4FCE8; color: #1B9E4B; padding: 8px 16px; border-radius: 20px; font-weight: 700; font-size: 14px; display: inline-block; margin: 6px 0; }
+  .badge-diff { background: #FFF0E0; color: #D9822B; padding: 8px 16px; border-radius: 20px; font-weight: 700; font-size: 14px; display: inline-block; margin: 6px 0; }
+  .navbar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: white; box-shadow: 0 -4px 14px rgba(0,0,0,0.06);
+    display: flex; max-width: 480px; margin: 0 auto;
+  }
+  .navitem {
+    flex: 1; text-align: center; padding: 10px 4px 8px; cursor: pointer;
+    color: var(--text-soft); font-size: 11px; font-weight: 600;
+  }
+  .navitem.active { color: var(--accent); }
+  .navicon { font-size: 20px; display: block; margin-bottom: 2px; }
+  .hist-item { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid #f4f4f4; }
+  .hist-item:last-child { border-bottom: none; }
+  .hist-date { font-size: 11px; color: var(--text-soft); width: 60px; flex-shrink: 0; }
+  .hist-body { flex: 1; font-size: 14px; }
+  .hist-tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+  .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .bar-label { width: 70px; font-size: 12px; flex-shrink: 0; }
+  .bar-track { flex: 1; height: 14px; background: #f0f0f0; border-radius: 8px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 8px; }
+  .bar-val { width: 30px; font-size: 11px; text-align: right; color: var(--text-soft); flex-shrink: 0; }
+  .alert-box { background: #FFF0E0; border-radius: 16px; padding: 14px 16px; font-size: 13px; color: #A85A00; margin-bottom: 12px; line-height: 1.5; }
+  .empty { text-align: center; padding: 40px 20px; color: var(--text-soft); }
+  input[type=text] {
+    width: 100%; padding: 14px; border-radius: 14px; border: 2px solid #eee;
+    font-size: 15px; margin-bottom: 10px; font-family: inherit;
+  }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab { flex: 1; text-align: center; padding: 10px; border-radius: 12px; font-size: 13px; font-weight: 700; cursor: pointer; background: #f4f4f4; color: var(--text-soft); }
+  .tab.active { background: var(--accent); color: white; }
+  .roulette-wheel { font-size: 60px; text-align: center; margin: 20px 0; transition: transform 2s cubic-bezier(.17,.67,.3,1.02); }
+  .small-row { display: flex; gap: 8px; }
+  .small-row .btn { margin-bottom: 0; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ---------- storage helpers ----------
+async function sGet(key, shared=true) {
+  try {
+    const r = await window.storage.get(key, shared);
+    return r && r.value ? JSON.parse(r.value) : null;
+  } catch(e) { return null; }
+}
+async function sSet(key, value, shared=true) {
+  try { await window.storage.set(key, JSON.stringify(value), shared); return true; }
+  catch(e) { console.error('storage set fail', e); return false; }
+}
+async function sDelete(key, shared=true) {
+  try { await window.storage.delete(key, shared); } catch(e) {}
+}
+async function sList(prefix, shared=true) {
+  try {
+    const r = await window.storage.list(prefix, shared);
+    return r && r.keys ? r.keys : [];
+  } catch(e) { return []; }
+}
+
+// ---------- defaults ----------
+const DEFAULT_SETTINGS = {
+  names: { A: '첫째', B: '둘째' },
+  categories: [
+    { id: 'video', name: '영상', emoji: '🎬', items: [
+      {id:'v1', name:'만화', emoji:'📺'}, {id:'v2', name:'동물영상', emoji:'🐶'},
+      {id:'v3', name:'챌린지', emoji:'🎤'}, {id:'v4', name:'브이로그', emoji:'📹'},
+      {id:'v5', name:'게임영상', emoji:'🎮'}
+    ]},
+    { id: 'snack', name: '과자', emoji: '🍪', items: [
+      {id:'s1', name:'초코과자', emoji:'🍫'}, {id:'s2', name:'감자칩', emoji:'🥔'},
+      {id:'s3', name:'젤리', emoji:'🍬'}, {id:'s4', name:'사탕', emoji:'🍭'},
+      {id:'s5', name:'과일', emoji:'🍓'}
+    ]},
+    { id: 'toy', name: '장난감', emoji: '🧸', items: [
+      {id:'t1', name:'레고', emoji:'🧱'}, {id:'t2', name:'인형', emoji:'🪆'},
+      {id:'t3', name:'보드게임', emoji:'🎲'}, {id:'t4', name:'그림도구', emoji:'🎨'},
+      {id:'t5', name:'블록', emoji:'🟦'}
+    ]},
+    { id: 'activity', name: '놀이', emoji: '⚽', items: [
+      {id:'p1', name:'보드게임', emoji:'🎲'}, {id:'p2', name:'줄넘기', emoji:'🪢'},
+      {id:'p3', name:'그림그리기', emoji:'🖍️'}, {id:'p4', name:'술래잡기', emoji:'🏃'},
+      {id:'p5', name:'만들기', emoji:'✂️'}
+    ]}
+  ]
+};
+
+// ---------- state ----------
+let state = {
+  me: null,          // 'A' | 'B'
+  screen: 'loading',
+  settings: null,
+  activeRound: null,
+  myChoice: null,
+  partnerChoice: null,
+  pollTimer: null,
+  historyFilterTab: 'all',
+  toast: null,
+};
+
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+function stopPoll() { if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; } }
+
+function goto(screen) { stopPoll(); state.screen = screen; render(); }
+
+// ---------- boot ----------
+async function boot() {
+  let settings = await sGet('settings');
+  if (!settings) {
+    settings = DEFAULT_SETTINGS;
+    await sSet('settings', settings);
+  }
+  state.settings = settings;
+  state.screen = 'who';
+  render();
+}
+
+// ---------- WHO SCREEN ----------
+function renderWho() {
+  const s = state.settings;
+  return `
+    <h1>👯 따로 또 같이</h1>
+    <p class="sub">지금 누가 폰을 보고 있어?</p>
+    <div class="card">
+      <button class="btn btn-a" onclick="pickWho('A')">${s.names.A} 예요</button>
+      <button class="btn btn-b" onclick="pickWho('B')">${s.names.B} 예요</button>
+    </div>
+    <button class="btn btn-ghost" onclick="goto('settings')">⚙️ 이름 바꾸기 / 설정</button>
+  `;
+}
+window.pickWho = function(who) {
+  state.me = who;
+  goto('home');
+};
+
+// ---------- HOME ----------
+async function renderHome() {
+  // check if an active round exists that I haven't joined
+  const active = await sGet('active-round');
+  let banner = '';
+  if (active && active.startedBy !== state.me) {
+    const myChoiceKey = `choice-${active.roundId}-${state.me}`;
+    const already = await sGet(myChoiceKey);
+    if (!already) {
+      banner = `
+        <div class="card" style="background:var(--a-light); border:2px solid var(--a-color);">
+          <div style="font-weight:700; margin-bottom:10px;">${state.settings.names[active.startedBy]}가 "${active.category.emoji} ${active.category.name}" 라운드를 시작했어요!</div>
+          <button class="btn btn-primary" onclick="joinRound()">지금 참여하기 →</button>
+        </div>`;
+    }
+  }
+  return `
+    ${topbar()}
+    <h1>👯 따로 또 같이</h1>
+    ${banner}
+    <div class="card">
+      <h2>오늘은 뭘 골라볼까?</h2>
+      <button class="btn btn-primary" onclick="goto('choose-category')">🎯 새로운 선택 시작하기</button>
+    </div>
+    <div class="card">
+      <div class="grid2">
+        <button class="btn btn-outline" onclick="goto('history')">📜 기록 보기</button>
+        <button class="btn btn-outline" onclick="goto('profile')">📊 성향 보기</button>
+      </div>
+    </div>
+  `;
+}
+
+function topbar() {
+  const who = state.me;
+  const color = who === 'A' ? 'var(--a-color)' : 'var(--b-color)';
+  return `
+    <div class="topbar">
+      <div class="who-badge"><span class="dot" style="background:${color}"></span> ${state.settings.names[who]}</div>
+      <button class="btn-ghost" style="padding:6px 10px; border:none; background:none; font-size:13px; cursor:pointer; color:var(--text-soft);" onclick="goto('who')">바꾸기</button>
+    </div>`;
+}
+
+// poll home screen for banner updates
+function startHomePoll() {
+  stopPoll();
+  state.pollTimer = setInterval(async () => {
+    if (state.screen !== 'home') return;
+    await renderInto('home');
+  }, 3000);
+}
+
+// ---------- CHOOSE CATEGORY (starting a round) ----------
+function renderChooseCategory() {
+  const cats = state.settings.categories;
+  return `
+    ${topbar()}
+    <h2>어떤 걸 고를까요?</h2>
+    <div class="grid2">
+      ${cats.map(c => `
+        <div class="item-tile" onclick="startRound('${c.id}')">
+          <span class="item-emoji">${c.emoji}</span>
+          <span class="item-name">${c.name}</span>
+        </div>
+      `).join('')}
+    </div>
+    <button class="btn btn-ghost" onclick="goto('home')">← 뒤로</button>
+  `;
+}
+
+async function startRound(categoryId) {
+  const cat = state.settings.categories.find(c => c.id === categoryId);
+  const roundId = genId();
+  const round = { roundId, category: { id: cat.id, name: cat.name, emoji: cat.emoji }, items: cat.items, startedBy: state.me, createdAt: Date.now() };
+  await sSet('active-round', round);
+  state.activeRound = round;
+  goto('choose-item');
+}
+
+async function joinRound() {
+  const active = await sGet('active-round');
+  if (!active) { goto('home'); return; }
+  state.activeRound = active;
+  goto('choose-item');
+}
+
+// ---------- CHOOSE ITEM (blind pick) ----------
+function renderChooseItem() {
+  const round = state.activeRound;
+  return `
+    ${topbar()}
+    <h2>${round.category.emoji} ${round.category.name} — 네가 좋아하는 걸 골라봐!</h2>
+    <p class="sub" style="margin-top:-8px;">상대방은 네가 뭘 골랐는지 아직 못 봐요 🤫</p>
+    <div class="grid3">
+      ${round.items.map(it => `
+        <div class="item-tile" onclick="submitChoice('${it.id}')">
+          <span class="item-emoji">${it.emoji}</span>
+          <span class="item-name">${it.name}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function submitChoice(itemId) {
+  const round = state.activeRound;
+  const item = round.items.find(i => i.id === itemId);
+  const key = `choice-${round.roundId}-${state.me}`;
+  await sSet(key, { itemId: item.id, name: item.name, emoji: item.emoji, submittedAt: Date.now() });
+  state.myChoice = item;
+  goto('waiting');
+  startWaitingPoll();
+}
+
+// ---------- WAITING ----------
+function renderWaiting() {
+  const round = state.activeRound;
+  const otherName = state.settings.names[state.me === 'A' ? 'B' : 'A'];
+  return `
+    ${topbar()}
+    <div class="card center">
+      <span style="font-size:40px;">${state.myChoice.emoji}</span>
+      <p style="font-weight:700; margin:8px 0 0;">${state.myChoice.name}을(를) 골랐어요!</p>
+      <div class="spinner"></div>
+      <p class="sub" style="margin:0;">${otherName}가 고르는 중... 잠깐 기다려줘 😊</p>
+    </div>
+    <button class="btn btn-ghost" onclick="stopPoll(); goto('home')">나중에 결과 볼게요</button>
+  `;
+}
+
+function startWaitingPoll() {
+  stopPoll();
+  state.pollTimer = setInterval(async () => {
+    const round = state.activeRound;
+    const otherKey = `choice-${round.roundId}-${state.me === 'A' ? 'B' : 'A'}`;
+    const other = await sGet(otherKey);
+    if (other) {
+      state.partnerChoice = other;
+      stopPoll();
+      goto('reveal');
+    }
+  }, 2000);
+}
+
+// ---------- REVEAL ----------
+async function renderReveal() {
+  const round = state.activeRound;
+  const meChoice = state.myChoice || await sGet(`choice-${round.roundId}-${state.me}`);
+  const otherKey = `choice-${round.roundId}-${state.me === 'A' ? 'B' : 'A'}`;
+  const otherChoice = state.partnerChoice || await sGet(otherKey);
+  state.myChoice = meChoice;
+  state.partnerChoice = otherChoice;
+
+  const matched = meChoice.itemId === otherChoice.itemId;
+  const myName = state.settings.names[state.me];
+  const otherName = state.settings.names[state.me === 'A' ? 'B' : 'A'];
+
+  // check if history already recorded (partner may have resolved first, for match case auto-resolved)
+  if (matched) {
+    return `
+      ${topbar()}
+      <div class="card center">
+        <h2>${round.category.emoji} ${round.category.name}</h2>
+        <div class="badge-match">🎉 취향이 딱 맞았어요!</div>
+        <div class="reveal-row">
+          <div class="reveal-card" style="background:var(--a-light);">
+            <span class="reveal-emoji">${meChoice.emoji}</span>
+            <div>${myName}</div>
+          </div>
+          <div class="vs">=</div>
+          <div class="reveal-card" style="background:var(--b-light);">
+            <span class="reveal-emoji">${otherChoice.emoji}</span>
+            <div>${otherName}</div>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="finishRound(null, 'match')">완료! 🙌</button>
+      </div>
+    `;
+  }
+  return `
+    ${topbar()}
+    <div class="card center">
+      <h2>${round.category.emoji} ${round.category.name}</h2>
+      <div class="badge-diff">서로 다른 걸 골랐어요! 완전 좋아요 ✨</div>
+      <div class="reveal-row">
+        <div class="reveal-card" style="background:var(--a-light);">
+          <span class="reveal-emoji">${meChoice.emoji}</span>
+          <div>${myName}: ${meChoice.name}</div>
+        </div>
+        <div class="vs">≠</div>
+        <div class="reveal-card" style="background:var(--b-light);">
+          <span class="reveal-emoji">${otherChoice.emoji}</span>
+          <div>${otherName}: ${otherChoice.name}</div>
+        </div>
+      </div>
+      <p class="sub">어떻게 정할까요?</p>
+    </div>
+    <div class="card">
+      <button class="btn btn-primary" onclick="goto('roulette')">🎡 룰렛 돌리기 (반반 확률)</button>
+      <button class="btn btn-outline" onclick="resolveTurnTaking()">🔄 번갈아하기 (이번엔 누구 차례?)</button>
+      <button class="btn btn-outline" onclick="finishRound(null, 'both')">🤝 둘 다 하기</button>
+      <button class="btn btn-ghost" onclick="goto('manual-resolve')">✋ 직접 정하기</button>
+    </div>
+  `;
+}
+
+// ---------- Resolution: roulette ----------
+function renderRoulette() {
+  return `
+    ${topbar()}
+    <div class="card center">
+      <h2>🎡 룰렛을 돌려볼게요!</h2>
+      <div class="roulette-wheel" id="wheel">🎯</div>
+      <button class="btn btn-primary" id="spinBtn" onclick="spinRoulette()">돌리기!</button>
+    </div>
+  `;
+}
+function spinRoulette() {
+  const wheel = document.getElementById('wheel');
+  const btn = document.getElementById('spinBtn');
+  btn.disabled = true;
+  const winner = Math.random() < 0.5 ? 'A' : (state.me === 'A' ? 'B' : 'A'); // placeholder, real pick below
+  const realWinner = Math.random() < 0.5 ? state.me : (state.me === 'A' ? 'B' : 'A');
+  wheel.style.transform = `rotate(${1080 + Math.floor(Math.random()*360)}deg)`;
+  setTimeout(() => {
+    finishRound(realWinner, 'roulette');
+  }, 2000);
+}
+
+// ---------- Resolution: turn taking ----------
+async function resolveTurnTaking() {
+  const round = state.activeRound;
+  const turnKey = `turn-${round.category.id}`;
+  const turnData = await sGet(turnKey) || { lastWinner: null };
+  let winner;
+  if (!turnData.lastWinner) winner = state.me;
+  else winner = turnData.lastWinner === 'A' ? 'B' : 'A';
+  await sSet(turnKey, { lastWinner: winner });
+  finishRound(winner, 'turn-taking');
+}
+
+// ---------- Resolution: manual ----------
+function renderManualResolve() {
+  const round = state.activeRound;
+  const meChoice = state.myChoice;
+  const otherChoice = state.partnerChoice;
+  const myName = state.settings.names[state.me];
+  const otherName = state.settings.names[state.me === 'A' ? 'B' : 'A'];
+  return `
+    ${topbar()}
+    <div class="card center">
+      <h2>✋ 어떤 걸로 할까요?</h2>
+      <p class="sub">둘이 이야기해서 정해보세요</p>
+      <button class="btn btn-a" onclick="finishRound('${state.me}', 'manual')">${meChoice.emoji} ${myName}의 선택 (${meChoice.name})</button>
+      <button class="btn btn-b" onclick="finishRound('${state.me === 'A' ? 'B' : 'A'}', 'manual')">${otherChoice.emoji} ${otherName}의 선택 (${otherChoice.name})</button>
+    </div>
+    <button class="btn btn-ghost" onclick="goto('reveal')">← 뒤로</button>
+  `;
+}
+
+// ---------- finish & log ----------
+async function finishRound(winnerTwin, resolutionType) {
+  const round = state.activeRound;
+  const meChoice = state.myChoice;
+  const otherChoice = state.partnerChoice;
+  const matched = meChoice.itemId === otherChoice.itemId;
+  let concededBy = null;
+  if (!matched && winnerTwin) {
+    concededBy = winnerTwin === 'A' ? 'B' : 'A';
+  }
+  const entry = {
+    id: round.roundId,
+    categoryId: round.category.id,
+    categoryName: round.category.name,
+    categoryEmoji: round.category.emoji,
+    choiceA: state.me === 'A' ? meChoice : otherChoice,
+    choiceB: state.me === 'B' ? meChoice : otherChoice,
+    matched,
+    resolutionType,
+    winnerTwin,
+    concededBy,
+    timestamp: Date.now()
+  };
+  await sSet(`history-${round.roundId}`, entry);
+  await sDelete('active-round');
+  state.activeRound = null;
+  state.myChoice = null;
+  state.partnerChoice = null;
+  goto('result');
+  state._lastResult = entry;
+}
+
+function renderResult() {
+  const e = state._lastResult;
+  if (!e) { goto('home'); return ''; }
+  return `
+    ${topbar()}
+    <div class="card center">
+      <div style="font-size:50px;">✅</div>
+      <h2>기록 완료!</h2>
+      <p class="sub">${e.categoryEmoji} ${e.categoryName} 선택이 저장됐어요</p>
+      <button class="btn btn-primary" onclick="goto('home')">홈으로</button>
+    </div>
+  `;
+}
+
+// ---------- HISTORY ----------
+async function renderHistory() {
+  const keys = await sList('history-');
+  const entries = [];
+  for (const k of keys) {
+    const v = await sGet(k.replace(/^/, '')); // key already includes prefix
+    if (v) entries.push(v);
+  }
+  entries.sort((a,b) => b.timestamp - a.timestamp);
+  const filtered = state.historyFilterTab === 'all' ? entries : entries.filter(e => e.categoryId === state.historyFilterTab);
+  const cats = state.settings.categories;
+
+  const rows = filtered.length === 0
+    ? `<div class="empty">아직 기록이 없어요.<br>새로운 선택을 시작해보세요!</div>`
+    : filtered.map(e => {
+        const d = new Date(e.timestamp);
+        const dateStr = `${d.getMonth()+1}/${d.getDate()}`;
+        const tagColor = e.matched ? '#E4FCE8' : '#FFF0E0';
+        const tagText = e.matched ? '일치' : (e.resolutionType === 'both' ? '둘다' : '조율');
+        const tagTextColor = e.matched ? '#1B9E4B' : '#D9822B';
+        return `
+          <div class="hist-item">
+            <div class="hist-date">${dateStr}</div>
+            <div class="hist-body">
+              <div>${e.categoryEmoji} ${e.categoryName} — ${state.settings.names.A}: ${e.choiceA.emoji}${e.choiceA.name} / ${state.settings.names.B}: ${e.choiceB.emoji}${e.choiceB.name}</div>
+            </div>
+            <div class="hist-tag" style="background:${tagColor}; color:${tagTextColor};">${tagText}</div>
+          </div>
+        `;
+      }).join('');
+
+  return `
+    ${topbar()}
+    <h2>📜 기록</h2>
+    <div class="tabs" style="overflow-x:auto;">
+      <div class="tab ${state.historyFilterTab === 'all' ? 'active' : ''}" onclick="setHistTab('all')">전체</div>
+      ${cats.map(c => `<div class="tab ${state.historyFilterTab === c.id ? 'active' : ''}" onclick="setHistTab('${c.id}')">${c.emoji}</div>`).join('')}
+    </div>
+    <div class="card">${rows}</div>
+  `;
+}
+window.setHistTab = function(id) { state.historyFilterTab = id; renderInto('history'); };
+
+// ---------- PROFILE ----------
+async function renderProfile() {
+  const keys = await sList('history-');
+  const entries = [];
+  for (const k of keys) {
+    const v = await sGet(k);
+    if (v) entries.push(v);
+  }
+  const cats = state.settings.categories;
+  const names = state.settings.names;
+
+  const total = entries.length;
+  const mismatches = entries.filter(e => !e.matched && e.concededBy);
+  const concedeCount = { A: 0, B: 0 };
+  mismatches.forEach(e => { if (e.concededBy) concedeCount[e.concededBy]++; });
+  const concedeRate = {
+    A: mismatches.length ? Math.round(concedeCount.A / mismatches.length * 100) : 0,
+    B: mismatches.length ? Math.round(concedeCount.B / mismatches.length * 100) : 0,
+  };
+
+  let alert = '';
+  if (mismatches.length >= 4) {
+    if (concedeRate.A >= 65) alert = `<div class="alert-box">💡 최근 기록을 보면 <b>${names.A}</b>가 의견이 다를 때 자주 양보하고 있어요 (${concedeRate.A}%). 다음엔 ${names.A}의 선택을 먼저 존중해주는 것도 좋을 것 같아요.</div>`;
+      else if (concedeRate.B >= 65) alert = `<div class="alert-box">💡 최근 기록을 보면 <b>${names.B}</b>가 의견이 다를 때 자주 양보하고 있어요 (${concedeRate.B}%). 다음엔 ${names.B}의 선택을 먼저 존중해주는 것도 좋을 것 같아요.</div>`;
+  }
+
+  function topItemsFor(twinKey, catId) {
+    const tally = {};
+    entries.filter(e => e.categoryId === catId).forEach(e => {
+      const c = twinKey === 'A' ? e.choiceA : e.choiceB;
+      tally[c.name] = (tally[c.name] || 0) + { emoji: c.emoji, count: 0 };
+    });
+    return tally;
+  }
+
+  const catBlocks = cats.map(cat => {
+    const catEntries = entries.filter(e => e.categoryId === cat.id);
+    if (catEntries.length === 0) return '';
+    const tallyA = {}, tallyB = {};
+    catEntries.forEach(e => {
+      const kA = e.choiceA.name + '|' + e.choiceA.emoji;
+      const kB = e.choiceB.name + '|' + e.choiceB.emoji;
+      tallyA[kA] = (tallyA[kA] || 0) + 1;
+      tallyB[kB] = (tallyB[kB] || 0) + 1;
+    });
+    const topA = Object.entries(tallyA).sort((a,b)=>b[1]-a[1]).slice(0,3);
+    const topB = Object.entries(tallyB).sort((a,b)=>b[1]-a[1]).slice(0,3);
+    const maxCount = Math.max(...topA.map(x=>x[1]), ...topB.map(x=>x[1]), 1);
+
+    function bars(top, color) {
+      return top.map(([key, cnt]) => {
+        const [name, emoji] = key.split('|');
+        const pct = Math.round(cnt / maxCount * 100);
+        return `<div class="bar-row">
+          <div class="bar-label">${emoji} ${name}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${pct}%; background:${color};"></div></div>
+          <div class="bar-val">${cnt}회</div>
+        </div>`;
+      }).join('');
+    }
+
+    return `
+      <div class="card">
+        <h2>${cat.emoji} ${cat.name}</h2>
+        <p class="sub" style="margin:0 0 10px; text-align:left;">${names.A}가 자주 고른 것</p>
+        ${bars(topA, 'var(--a-color)')}
+        <p class="sub" style="margin:14px 0 10px; text-align:left;">${names.B}가 자주 고른 것</p>
+        ${bars(topB, 'var(--b-color)')}
+      </div>
+    `;
+  }).join('');
+
+  return `
+    ${topbar()}
+    <h2>📊 성향 프로필</h2>
+    <div class="card">
+      <p class="sub" style="text-align:left; margin:0 0 10px;">지금까지 총 ${total}번 선택했어요</p>
+      <div class="bar-row">
+        <div class="bar-label">${names.A} 양보</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${concedeRate.A}%; background:var(--a-color);"></div></div>
+        <div class="bar-val">${concedeRate.A}%</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">${names.B} 양보</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${concedeRate.B}%; background:var(--b-color);"></div></div>
+        <div class="bar-val">${concedeRate.B}%</div>
+      </div>
+    </div>
+    ${alert}
+    ${catBlocks || '<div class="empty">아직 데이터가 부족해요. 선택을 더 기록해보세요!</div>'}
+  `;
+}
+
+// ---------- SETTINGS ----------
+function renderSettings() {
+  const s = state.settings;
+  return `
+    <h1>⚙️ 설정</h1>
+    <div class="card">
+      <h2>이름</h2>
+      <input type="text" id="nameA" value="${s.names.A}" placeholder="첫째 이름">
+      <input type="text" id="nameB" value="${s.names.B}" placeholder="둘째 이름">
+      <button class="btn btn-primary" onclick="saveNames()">저장</button>
+    </div>
+    <div class="card">
+      <p class="sub" style="text-align:left; margin:0;">카테고리와 항목은 기본으로 영상·과자·장난감·놀이가 준비되어 있어요. 항목 추가/수정 기능은 다음 업데이트에서 지원할 예정이에요.</p>
+    </div>
+    <button class="btn btn-ghost" onclick="goto(state.me ? 'home' : 'who')">← 돌아가기</button>
+  `;
+}
+async function saveNames() {
+  const a = document.getElementById('nameA').value.trim() || '첫째';
+  const b = document.getElementById('nameB').value.trim() || '둘째';
+  state.settings.names = { A: a, B: b };
+  await sSet('settings', state.settings);
+  goto(state.me ? 'home' : 'who');
+}
+
+// ---------- NAV ----------
+function renderNav() {
+  if (!state.me) return '';
+  const items = [
+    { id: 'home', icon: '🏠', label: '홈' },
+    { id: 'history', icon: '📜', label: '기록' },
+    { id: 'profile', icon: '📊', label: '성향' },
+    { id: 'settings', icon: '⚙️', label: '설정' },
+  ];
+  return `
+    <div class="navbar">
+      ${items.map(i => `
+        <div class="navitem ${state.screen === i.id ? 'active' : ''}" onclick="goto('${i.id}')">
+          <span class="navicon">${i.icon}</span>${i.label}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ---------- MASTER RENDER ----------
+async function renderInto(screen) {
+  const app = document.getElementById('app');
+  let html = '';
+  switch (screen) {
+    case 'who': html = renderWho(); break;
+    case 'home': html = await renderHome(); startHomePoll(); break;
+    case 'choose-category': html = renderChooseCategory(); break;
+    case 'choose-item': html = renderChooseItem(); break;
+    case 'waiting': html = renderWaiting(); break;
+    case 'reveal': html = await renderReveal(); break;
+    case 'roulette': html = renderRoulette(); break;
+    case 'manual-resolve': html = renderManualResolve(); break;
+    case 'result': html = renderResult(); break;
+    case 'history': html = await renderHistory(); break;
+    case 'profile': html = await renderProfile(); break;
+    case 'settings': html = renderSettings(); break;
+    default: html = '<div class="empty">불러오는 중...</div>';
+  }
+  app.innerHTML = html + renderNav();
+}
+
+async function render() {
+  await renderInto(state.screen);
+}
+
+boot();
+</script>
+</body>
+</html>
