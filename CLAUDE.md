@@ -20,7 +20,7 @@
 | 인증 — 자녀 | 이메일 없음. `profile_id + 4자리 PIN` → family 코드로 특정한 뒤, PIN에서 결정론적으로 파생한 비밀번호로 synthetic 이메일 계정에 로그인해 **실제 Supabase Auth 세션**을 발급(`role`은 JWT 클레임이 아니라 `profiles.role` 컬럼으로 판별) |
 | 권한 분리 | 프론트엔드 라우팅 차단 + **RLS(Row Level Security)로 DB 레벨 차단**이 필수. 프론트엔드만으로 막지 않음 |
 | 실시간 동기화 | Supabase Realtime (구현은 Postgres Changes 구독 사용, Broadcast/Presence 아님), 3초 폴링 폴백 |
-| 사진 AI 분석 | Claude API Vision (현재 `claude-haiku-4-5`). **자동 호출 금지** — 사진을 찍는(=버튼을 누르는) 순간에만 호출. 용도 두 가지: (1) Phase 1 "사진으로 고르기" — 자유 분류가 아니라 **그 카테고리의 기존 항목 목록 중 하나로만 매칭**시켜 블라인드/조율/기록 로직을 그대로 재사용, (2) Phase 2 사진 아카이브 분류 |
+| 사진 AI 분석 | Azure OpenAI (vision + function calling 지원 배포, 기본값 `gpt-4o-mini`) — 사용자가 Azure 비용을 직접 부담하기로 해서 Anthropic 직접 호출 대신 채택. **자동 호출 금지** — 사진을 찍는(=버튼을 누르는) 순간에만 호출. 용도 두 가지: (1) Phase 1 "사진으로 고르기" — 자유 분류가 아니라 **그 카테고리의 기존 항목 목록 중 하나로만 매칭**시켜 블라인드/조율/기록 로직을 그대로 재사용, (2) Phase 2 사진 아카이브 분류 |
 | 소프트 삭제 | 카테고리/항목은 하드 삭제 대신 `is_active=false` |
 | 확장성 원칙 | 전 테이블 `family_id` 기반. 코드에 "가족은 하나뿐"이라는 가정(하드코딩된 family_id, 환경변수 등)을 절대 심지 않을 것 |
 

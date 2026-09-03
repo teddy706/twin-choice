@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { classifyPhotoAgainstItems } from "@/lib/anthropic";
+import { classifyPhotoAgainstItems } from "@/lib/azureOpenAI";
 
 const MAX_BASE64_LENGTH = 8_000_000; // 대략 원본 6MB 상당
 
