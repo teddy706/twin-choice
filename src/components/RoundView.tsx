@@ -8,10 +8,12 @@ import { resizeImageForUpload } from "@/lib/imageResize";
 import type { Choice, Item, Profile, Resolution, Round, Category } from "@/lib/types";
 
 type FamilyProfile = Pick<Profile, "id" | "name" | "avatar" | "role">;
-type RoundRow = Pick<Round, "id" | "family_id" | "category_id" | "status" | "expected_participants" | "started_by">;
+type RoundRow = Pick<Round, "id" | "family_id" | "category_id" | "status" | "expected_participants" | "started_by" | "ai_matched">;
 type ItemOption = Pick<Item, "id" | "name" | "emoji">;
 type CategoryInfo = Pick<Category, "id" | "name" | "emoji"> | null;
-type ChoiceRow = Pick<Choice, "id" | "profile_id" | "item_id" | "submitted_at">;
+type ChoiceRow = Pick<Choice, "id" | "profile_id" | "item_id" | "label" | "photo_id" | "submitted_at">;
+
+const TEMP_PREFIX = "temp-";
 
 export function RoundView({
   profile,
@@ -21,6 +23,7 @@ export function RoundView({
   familyProfiles,
   initialChoices,
   initialResolution,
+  photoUrls,
 }: {
   profile: Profile;
   round: RoundRow;
@@ -29,28 +32,34 @@ export function RoundView({
   familyProfiles: FamilyProfile[];
   initialChoices: ChoiceRow[];
   initialResolution: Resolution | null;
+  photoUrls: Record<string, string>;
 }) {
   const router = useRouter();
   const [choices, setChoices] = useState<ChoiceRow[]>(initialChoices);
   const [resolution, setResolution] = useState<Resolution | null>(initialResolution);
-  const [submitting, setSubmitting] = useState(false);
   const [spinning, setSpinning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // "사진으로 고르기" 상태
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pickMode, setPickMode] = useState<"grid" | "camera">("grid");
-  const [photoStatus, setPhotoStatus] = useState<"idle" | "analyzing" | "confirm" | "unmatched">("idle");
+  const [photoStatus, setPhotoStatus] = useState<"idle" | "analyzing" | "confirm" | "manual">("idle");
+  const [photoSubmitting, setPhotoSubmitting] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
-  const [aiSuggestion, setAiSuggestion] = useState<{ itemId: string | null; label: string; storagePath: string } | null>(
-    null
-  );
+  const [aiPhoto, setAiPhoto] = useState<{ photoId: string; label: string } | null>(null);
+  const [manualLabel, setManualLabel] = useState("");
+
+  // 공개 시점 비교(그리드끼리는 무료/즉시, 사진이 하나라도 끼면 AI 비교) 상태
+  const [matchResult, setMatchResult] = useState<boolean | null>(round.ai_matched);
+  const matchRequestedRef = useRef(false);
 
   const profileById = useMemo(() => new Map(familyProfiles.map((p) => [p.id, p])), [familyProfiles]);
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
   // Supabase Realtime(postgres_changes) 구독 + 3초 폴링 폴백.
+  // profile_id 기준으로 병합해야 한다 — 아니면 낙관적 업데이트로 먼저 넣어둔 임시 row 와
+  // 서버에서 도착한 진짜 row 가 같은 사람인데도 둘 다 남아 인원수 계산이 틀어질 수 있다.
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
@@ -60,7 +69,7 @@ export function RoundView({
         { event: "INSERT", schema: "public", table: "choices", filter: `round_id=eq.${round.id}` },
         (payload) => {
           const row = payload.new as ChoiceRow;
-          setChoices((prev) => (prev.some((c) => c.id === row.id) ? prev : [...prev, row]));
+          setChoices((prev) => [...prev.filter((c) => c.profile_id !== row.profile_id), row]);
         }
       )
       .on(
@@ -75,9 +84,16 @@ export function RoundView({
     const poll = setInterval(async () => {
       const { data: freshChoices } = await supabase
         .from("choices")
-        .select("id, profile_id, item_id, submitted_at")
+        .select("id, profile_id, item_id, label, photo_id, submitted_at")
         .eq("round_id", round.id);
-      if (freshChoices) setChoices(freshChoices);
+      if (freshChoices) {
+        setChoices((prev) => {
+          const stillPendingOptimistic = prev.filter(
+            (c) => c.id.startsWith(TEMP_PREFIX) && !freshChoices.some((f) => f.profile_id === c.profile_id)
+          );
+          return [...freshChoices, ...stillPendingOptimistic];
+        });
+      }
 
       const { data: freshResolution } = await supabase
         .from("resolutions")
@@ -94,27 +110,97 @@ export function RoundView({
   }, [round.id]);
 
   const myChoice = choices.find((c) => c.profile_id === profile.id) ?? null;
-  const otherChoices = choices.filter((c) => c.profile_id !== profile.id);
   const revealed = choices.length >= round.expected_participants;
-  const matched = revealed && choices.length === 2 && choices[0].item_id === choices[1].item_id;
   const participantIds = choices.map((c) => c.profile_id);
 
+  // 공개되면 한 번만 비교를 요청한다. 둘 다 그리드 선택이면 서버가 AI 호출 없이 바로 답하고,
+  // 이미 계산된 적 있으면(다른 쪽 화면에서 먼저 요청) rounds.ai_matched 캐시를 그대로 돌려준다.
+  useEffect(() => {
+    if (!revealed || resolution || matchResult !== null || matchRequestedRef.current) return;
+    matchRequestedRef.current = true;
+    fetch(`/api/rounds/${round.id}/compare`, { method: "POST" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (typeof data.matched === "boolean") setMatchResult(data.matched);
+      })
+      .catch(() => {})
+      .finally(() => {
+        matchRequestedRef.current = false;
+      });
+  }, [revealed, resolution, matchResult, round.id]);
+
+  function choiceDisplay(c: ChoiceRow) {
+    if (c.item_id) {
+      const it = itemById.get(c.item_id);
+      return { emoji: it?.emoji ?? "❓", name: it?.name ?? "", photoUrl: undefined as string | undefined };
+    }
+    return { emoji: "📷", name: c.label ?? "", photoUrl: c.photo_id ? photoUrls[c.photo_id] : undefined };
+  }
+
+  // 탭 즉시 화면을 넘기고(낙관적 업데이트), 저장은 뒤에서 처리한다 — 실패하면 되돌린다.
+  // 네트워크 왕복을 기다렸다가 화면이 넘어가면 탭이 "느리게" 느껴지기 때문.
   async function submitChoice(itemId: string) {
-    setSubmitting(true);
     setError(null);
+    const tempId = `${TEMP_PREFIX}${Date.now()}`;
+    const optimistic: ChoiceRow = {
+      id: tempId,
+      profile_id: profile.id,
+      item_id: itemId,
+      label: null,
+      photo_id: null,
+      submitted_at: new Date().toISOString(),
+    };
+    setChoices((prev) => [...prev, optimistic]);
+
     const supabase = createClient();
     const { data, error: insertError } = await supabase
       .from("choices")
       .insert({ round_id: round.id, profile_id: profile.id, item_id: itemId })
-      .select("id, profile_id, item_id, submitted_at")
+      .select("id, profile_id, item_id, label, photo_id, submitted_at")
       .single();
+
     if (insertError || !data) {
-      setError("선택을 저장하지 못했어요.");
-      setSubmitting(false);
+      setChoices((prev) => prev.filter((c) => c.id !== tempId));
+      setError("선택을 저장하지 못했어요. 다시 눌러줄래?");
       return;
     }
-    setChoices((prev) => [...prev, data]);
-    setSubmitting(false);
+    setChoices((prev) => prev.map((c) => (c.id === tempId ? data : c)));
+  }
+
+  async function submitPhotoChoice(label: string, photoId: string) {
+    if (!label.trim()) {
+      setPhotoError("뭔지 짧게라도 적어줘야 해요.");
+      return;
+    }
+    setPhotoSubmitting(true);
+    setPhotoError(null);
+
+    const tempId = `${TEMP_PREFIX}${Date.now()}`;
+    const optimistic: ChoiceRow = {
+      id: tempId,
+      profile_id: profile.id,
+      item_id: null,
+      label,
+      photo_id: photoId,
+      submitted_at: new Date().toISOString(),
+    };
+    setChoices((prev) => [...prev, optimistic]);
+
+    const supabase = createClient();
+    const { data, error: insertError } = await supabase
+      .from("choices")
+      .insert({ round_id: round.id, profile_id: profile.id, item_id: null, label, photo_id: photoId })
+      .select("id, profile_id, item_id, label, photo_id, submitted_at")
+      .single();
+
+    if (insertError || !data) {
+      setChoices((prev) => prev.filter((c) => c.id !== tempId));
+      setPhotoError("선택을 저장하지 못했어요. 다시 시도해줄래?");
+      setPhotoSubmitting(false);
+      return;
+    }
+    setChoices((prev) => prev.map((c) => (c.id === tempId ? data : c)));
+    setPhotoSubmitting(false);
   }
 
   async function handlePhotoFile(file: File) {
@@ -147,55 +233,32 @@ export function RoundView({
         setPhotoStatus("idle");
         return;
       }
-      setAiSuggestion({ itemId: data.matchedItemId, label: data.label, storagePath: data.storagePath });
-      setPhotoStatus(data.matchedItemId ? "confirm" : "unmatched");
+      setAiPhoto({ photoId: data.photoId, label: data.label ?? "" });
+      if (data.confidence === "low" || !data.label) {
+        setManualLabel(data.label ?? "");
+        setPhotoStatus("manual");
+      } else {
+        setPhotoStatus("confirm");
+      }
     } catch {
       setPhotoError("네트워크가 불안정해서 실패했어요. 다시 시도해줄래?");
       setPhotoStatus("idle");
     }
   }
 
-  async function confirmAiChoice() {
-    if (!aiSuggestion?.itemId) return;
-    setSubmitting(true);
-    setError(null);
-    const supabase = createClient();
-    const { data, error: insertError } = await supabase
-      .from("choices")
-      .insert({ round_id: round.id, profile_id: profile.id, item_id: aiSuggestion.itemId })
-      .select("id, profile_id, item_id, submitted_at")
-      .single();
-    if (insertError || !data) {
-      setError("선택을 저장하지 못했어요.");
-      setSubmitting(false);
-      return;
-    }
-    // AI 매칭 결과 확인 성공 시에만 photos row 를 남긴다(거절/재촬영한 사진은 기록하지 않음).
-    await supabase.from("photos").insert({
-      family_id: round.family_id,
-      profile_id: profile.id,
-      round_id: round.id,
-      item_id: aiSuggestion.itemId,
-      storage_path: aiSuggestion.storagePath,
-      ai_category: category?.name ?? null,
-      ai_label: aiSuggestion.label,
-      confirmed: true,
-    });
-    setChoices((prev) => [...prev, data]);
-    setSubmitting(false);
-  }
-
   function retakePhoto() {
-    setAiSuggestion(null);
+    setAiPhoto(null);
     setCapturedPreview(null);
+    setManualLabel("");
     setPhotoStatus("idle");
     fileInputRef.current?.click();
   }
 
   function switchPickMode(mode: "grid" | "camera") {
     setPickMode(mode);
-    setAiSuggestion(null);
+    setAiPhoto(null);
     setCapturedPreview(null);
+    setManualLabel("");
     setPhotoStatus("idle");
     setPhotoError(null);
   }
@@ -317,11 +380,7 @@ export function RoundView({
           <>
             <div className="grid grid-cols-3 gap-2.5">
               {items.map((it) => (
-                <div
-                  key={it.id}
-                  className={`item-tile ${submitting ? "pointer-events-none opacity-50" : ""}`}
-                  onClick={() => submitChoice(it.id)}
-                >
+                <div key={it.id} className="item-tile" onClick={() => submitChoice(it.id)}>
                   <span className="mb-1.5 block text-3xl">{it.emoji}</span>
                   <span className="text-[13px] font-semibold">{it.name}</span>
                 </div>
@@ -336,7 +395,7 @@ export function RoundView({
             {photoStatus === "idle" && (
               <>
                 <p className="mb-1 text-center text-sm text-soft">
-                  좋아하는 걸 사진으로 찍으면 AI가 뭔지 맞혀볼게요!
+                  좋아하는 걸 사진으로 찍으면 AI가 뭔지 봐줄게요!
                 </p>
                 <p className="mb-3 text-center text-xs text-soft">사람은 나오지 않게, 물건만 찍어주세요 🙂</p>
                 <button className="btn btn-primary mb-0" onClick={() => fileInputRef.current?.click()}>
@@ -356,35 +415,58 @@ export function RoundView({
               </div>
             )}
 
-            {photoStatus === "confirm" && aiSuggestion && (
+            {photoStatus === "confirm" && aiPhoto && (
               <div className="text-center">
                 {capturedPreview && (
                   <img src={capturedPreview} alt="찍은 사진" className="mx-auto mb-3 h-40 w-40 rounded-2xl object-cover" />
                 )}
-                <p className="mb-4 font-bold">
-                  {itemById.get(aiSuggestion.itemId ?? "")?.emoji} {aiSuggestion.label} 맞아요?
-                </p>
-                <button className="btn btn-primary" disabled={submitting} onClick={confirmAiChoice}>
-                  {submitting ? "저장하는 중..." : "네, 맞아요!"}
+                <p className="mb-4 font-bold">{aiPhoto.label} 맞아요?</p>
+                <button
+                  className="btn btn-primary"
+                  disabled={photoSubmitting}
+                  onClick={() => submitPhotoChoice(aiPhoto.label, aiPhoto.photoId)}
+                >
+                  {photoSubmitting ? "저장하는 중..." : "네, 맞아요!"}
                 </button>
-                <button className="btn btn-outline mb-0" onClick={retakePhoto}>
-                  다시 찍을래요
+                <button
+                  className="btn btn-outline"
+                  onClick={() => {
+                    setManualLabel(aiPhoto.label);
+                    setPhotoStatus("manual");
+                  }}
+                >
+                  아니요, 다르게 쓸래요
                 </button>
+                <button className="btn btn-ghost mb-0" onClick={retakePhoto}>다시 찍을래요</button>
               </div>
             )}
 
-            {photoStatus === "unmatched" && (
+            {photoStatus === "manual" && aiPhoto && (
               <div className="text-center">
                 {capturedPreview && (
                   <img src={capturedPreview} alt="찍은 사진" className="mx-auto mb-3 h-40 w-40 rounded-2xl object-cover" />
                 )}
-                <p className="mb-4 text-sm text-soft">음, 뭔지 잘 모르겠어요. 다시 찍거나 목록에서 골라줄래?</p>
-                <button className="btn btn-outline" onClick={retakePhoto}>다시 찍기</button>
-                <button className="btn btn-ghost mb-0" onClick={() => switchPickMode("grid")}>목록에서 고를래요</button>
+                <p className="mb-2 text-sm text-soft">이게 뭔지 짧게 적어줄래?</p>
+                <input
+                  type="text"
+                  value={manualLabel}
+                  onChange={(e) => setManualLabel(e.target.value)}
+                  placeholder="예: 딸기맛 젤리"
+                  maxLength={30}
+                  className="mb-3 w-full rounded-2xl border-2 border-[#eee] p-3 text-center text-[15px]"
+                />
+                <button
+                  className="btn btn-primary"
+                  disabled={photoSubmitting || !manualLabel.trim()}
+                  onClick={() => submitPhotoChoice(manualLabel, aiPhoto.photoId)}
+                >
+                  {photoSubmitting ? "저장하는 중..." : "이걸로 할래요"}
+                </button>
+                <button className="btn btn-ghost mb-0" onClick={retakePhoto}>다시 찍을래요</button>
               </div>
             )}
 
-            {error && <p className="mt-3 text-sm font-semibold text-red-500">{error}</p>}
+            {photoError && <p className="mt-3 text-sm font-semibold text-red-500">{photoError}</p>}
           </div>
         )}
       </div>
@@ -394,12 +476,16 @@ export function RoundView({
   // ---- 2. 냈지만 상대는 아직 -> 대기 화면 ----
   // 부모는 위 관전 화면에서 !revealed 인 동안 이미 걸러지므로, 여기 도달했다면 myChoice 는 항상 존재한다.
   if (!revealed) {
-    const myItem = itemById.get(myChoice!.item_id);
+    const mine = choiceDisplay(myChoice!);
     return (
       <div className="app-shell items-center justify-center">
         <div className="card center text-center">
-          <span className="text-4xl">{myItem?.emoji}</span>
-          <p className="mt-2 font-bold">{myItem?.name}을(를) 골랐어요!</p>
+          {mine.photoUrl ? (
+            <img src={mine.photoUrl} alt="내 선택" className="mx-auto h-24 w-24 rounded-2xl object-cover" />
+          ) : (
+            <span className="text-4xl">{mine.emoji}</span>
+          )}
+          <p className="mt-2 font-bold">{mine.name}을(를) 골랐어요!</p>
           <div className="spinner mx-auto my-6 h-11 w-11 animate-spin rounded-full border-[5px] border-[#f0f0f0] border-t-accent" />
           <p className="text-sm text-soft">상대방이 고르는 중... 잠깐 기다려줘 😊</p>
         </div>
@@ -408,9 +494,22 @@ export function RoundView({
     );
   }
 
-  // ---- 3. 공개됨, 아직 조율 결과 없음 ----
+  // ---- 3. 공개됨, 아직 비교/조율 결과 없음 ----
   if (!resolution) {
-    if (matched) {
+    // 그리드끼리는 서버가 즉시 답하지만, 사진이 끼면 AI 호출이 필요해 잠깐 기다려야 한다.
+    if (matchResult === null) {
+      return (
+        <div className="app-shell items-center justify-center">
+          <div className="card center text-center">
+            <h2 className="mb-2 text-[19px] font-bold">{catLabel}</h2>
+            <div className="spinner mx-auto my-6 h-11 w-11 animate-spin rounded-full border-[5px] border-[#f0f0f0] border-t-accent" />
+            <p className="text-sm text-soft">둘이 같은 걸 골랐는지 AI가 비교하는 중...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (matchResult) {
       return (
         <div className="app-shell items-center justify-center">
           <div className="card center text-center">
@@ -421,10 +520,14 @@ export function RoundView({
             <div className="my-4 flex justify-center gap-3">
               {choices.map((c) => {
                 const p = profileById.get(c.profile_id);
-                const it = itemById.get(c.item_id);
+                const d = choiceDisplay(c);
                 return (
                   <div key={c.id} className="flex-1 rounded-2xl bg-a-light p-4">
-                    <span className="mb-1.5 block text-4xl">{it?.emoji}</span>
+                    {d.photoUrl ? (
+                      <img src={d.photoUrl} alt={d.name} className="mx-auto mb-1.5 h-16 w-16 rounded-xl object-cover" />
+                    ) : (
+                      <span className="mb-1.5 block text-4xl">{d.emoji}</span>
+                    )}
                     <div className="text-sm">{p?.name}</div>
                   </div>
                 );
@@ -446,11 +549,15 @@ export function RoundView({
           <div className="my-4 flex justify-center gap-3">
             {choices.map((c) => {
               const p = profileById.get(c.profile_id);
-              const it = itemById.get(c.item_id);
+              const d = choiceDisplay(c);
               return (
                 <div key={c.id} className="flex-1 rounded-2xl bg-b-light p-4">
-                  <span className="mb-1.5 block text-4xl">{it?.emoji}</span>
-                  <div className="text-sm">{p?.name}: {it?.name}</div>
+                  {d.photoUrl ? (
+                    <img src={d.photoUrl} alt={d.name} className="mx-auto mb-1.5 h-16 w-16 rounded-xl object-cover" />
+                  ) : (
+                    <span className="mb-1.5 block text-4xl">{d.emoji}</span>
+                  )}
+                  <div className="text-sm">{p?.name}: {d.name}</div>
                 </div>
               );
             })}

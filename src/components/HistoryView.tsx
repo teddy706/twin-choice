@@ -8,7 +8,7 @@ import type { Profile } from "@/lib/types";
 type CategoryOption = { id: string; name: string; emoji: string };
 type ProfileOption = { id: string; name: string; avatar: string };
 type ItemOption = { id: string; name: string; emoji: string; category_id: string };
-type ChoiceRow = { round_id: string; profile_id: string; item_id: string };
+type ChoiceRow = { round_id: string; profile_id: string; item_id: string | null; label: string | null; photo_id: string | null };
 type ResolutionRow = {
   id: string;
   round_id: string;
@@ -25,6 +25,7 @@ export function HistoryView({
   profiles,
   items,
   choices,
+  photoUrls,
 }: {
   profile: Profile;
   categories: CategoryOption[];
@@ -32,6 +33,7 @@ export function HistoryView({
   profiles: ProfileOption[];
   items: ItemOption[];
   choices: ChoiceRow[];
+  photoUrls: Record<string, string>;
 }) {
   const [tab, setTab] = useState<string>("all");
 
@@ -93,11 +95,18 @@ export function HistoryView({
                   {cat?.emoji} {cat?.name} —{" "}
                   {roundChoices.map((c, i) => {
                     const p = profileById.get(c.profile_id);
-                    const it = itemById.get(c.item_id);
+                    const it = c.item_id ? itemById.get(c.item_id) : null;
+                    const photoUrl = c.photo_id ? photoUrls[c.photo_id] : undefined;
                     return (
-                      <span key={c.round_id + c.profile_id}>
+                      <span key={c.round_id + c.profile_id} className="inline-flex items-center gap-1 align-middle">
                         {i > 0 && " / "}
-                        {p?.name}: {it?.emoji}{it?.name}
+                        {p?.name}:{" "}
+                        {photoUrl ? (
+                          <img src={photoUrl} alt={c.label ?? ""} className="inline-block h-5 w-5 rounded-md object-cover align-middle" />
+                        ) : (
+                          it?.emoji
+                        )}
+                        {it?.name ?? c.label}
                       </span>
                     );
                   })}

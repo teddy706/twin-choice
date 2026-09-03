@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { classifyPhotoAgainstItems } from "@/lib/azureOpenAI";
+import { describePhoto } from "@/lib/azureOpenAI";
 
 // 클라이언트가 업로드 전에 1024px로 축소해서 보내므로 정상 요청은 수백 KB 수준이다.
 // Vercel 서버리스 함수의 요청 본문 크기 제한(~4.5MB)보다 한참 낮게 잡아 여유를 둔다.
@@ -48,30 +48,20 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: "이미 공개된 라운드예요." }, { status: 400 });
   }
 
-  const [{ data: category }, { data: items }] = await Promise.all([
-    supabase.from("categories").select("name").eq("id", round.category_id).maybeSingle(),
-    supabase
-      .from("items")
-      .select("id, name, emoji")
-      .eq("category_id", round.category_id)
-      .eq("is_active", true)
-      .order("sort_order"),
-  ]);
-
-  if (!category || !items || items.length === 0) {
+  const { data: category } = await supabase
+    .from("categories")
+    .select("name")
+    .eq("id", round.category_id)
+    .maybeSingle();
+  if (!category) {
     return NextResponse.json({ error: "카테고리 정보를 불러오지 못했어요." }, { status: 500 });
   }
 
   const extension = mediaType.split("/")[1];
   const storagePath = `${profile.family_id}/${profile.id}/${round.id}-${Date.now()}.${extension}`;
 
-  const [classifyResult, uploadResult] = await Promise.all([
-    classifyPhotoAgainstItems({
-      imageBase64,
-      mediaType,
-      categoryName: category.name,
-      candidates: items,
-    }),
+  const [describeResult, uploadResult] = await Promise.all([
+    describePhoto({ imageBase64, mediaType, categoryName: category.name }),
     supabase.storage
       .from("photos")
       .upload(storagePath, Buffer.from(imageBase64, "base64"), { contentType: mediaType }),
@@ -81,9 +71,30 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: "사진을 저장하지 못했어요." }, { status: 500 });
   }
 
+  // photos row 는 찍는 즉시 만들어둔다(재촬영하면 새 row 가 또 생기는 건 괜찮음 -
+  // 최종적으로 choices.photo_id 가 가리키는 것만 "그 라운드의 선택"이 된다).
+  const { data: photo, error: photoError } = await supabase
+    .from("photos")
+    .insert({
+      family_id: profile.family_id,
+      profile_id: profile.id,
+      round_id: round.id,
+      storage_path: storagePath,
+      ai_category: category.name,
+      ai_label: describeResult.label || null,
+      confirmed: false,
+    })
+    .select("id")
+    .single();
+
+  if (photoError || !photo) {
+    return NextResponse.json({ error: "사진 정보를 저장하지 못했어요." }, { status: 500 });
+  }
+
   return NextResponse.json({
+    photoId: photo.id,
     storagePath,
-    matchedItemId: classifyResult.matchedItemId,
-    label: classifyResult.label,
+    label: describeResult.label,
+    confidence: describeResult.confidence,
   });
 }

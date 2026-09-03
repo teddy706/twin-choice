@@ -43,9 +43,13 @@ export interface Round {
   id: string;
   family_id: string;
   category_id: string;
-  started_by: string;
+  started_by: string | null;
   status: RoundStatus;
   expected_participants: number;
+  // 공개된 라운드에서 두 선택이 사진/자유 라벨 기반이라 AI 비교가 필요했던 경우의 캐싱된 결과.
+  // 둘 다 그리드 항목이면 계산할 필요 없이 null로 남아 있어도 되고(클라이언트가 item_id로 바로 비교),
+  // AI 비교를 한 번 거쳤다면 true/false 로 고정된다.
+  ai_matched: boolean | null;
   created_at: string;
 }
 
@@ -53,7 +57,10 @@ export interface Choice {
   id: string;
   round_id: string;
   profile_id: string;
-  item_id: string;
+  // 그리드에서 고른 경우 item_id, 사진/자유 입력으로 고른 경우 label(+photo_id) — 최소 하나는 있어야 한다.
+  item_id: string | null;
+  label: string | null;
+  photo_id: string | null;
   submitted_at: string;
 }
 

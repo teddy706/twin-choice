@@ -23,8 +23,20 @@ export default async function HistoryPage() {
 
   const roundIds = (resolutions ?? []).map((r: any) => r.round_id);
   const { data: choices } = roundIds.length
-    ? await supabase.from("choices").select("round_id, profile_id, item_id").in("round_id", roundIds)
+    ? await supabase.from("choices").select("round_id, profile_id, item_id, label, photo_id").in("round_id", roundIds)
     : { data: [] };
+
+  const photoIds = (choices ?? []).map((c) => c.photo_id).filter((id): id is string => !!id);
+  const photoUrls: Record<string, string> = {};
+  if (photoIds.length > 0) {
+    const { data: photos } = await supabase.from("photos").select("id, storage_path").in("id", photoIds);
+    await Promise.all(
+      (photos ?? []).map(async (p) => {
+        const { data: signed } = await supabase.storage.from("photos").createSignedUrl(p.storage_path, 3600);
+        if (signed) photoUrls[p.id] = signed.signedUrl;
+      })
+    );
+  }
 
   return (
     <HistoryView
@@ -34,6 +46,7 @@ export default async function HistoryPage() {
       profiles={profiles ?? []}
       items={items ?? []}
       choices={choices ?? []}
+      photoUrls={photoUrls}
     />
   );
 }

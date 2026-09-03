@@ -20,7 +20,7 @@
 | 인증 — 자녀 | 이메일 없음. `profile_id + 4자리 PIN` → family 코드로 특정한 뒤, PIN에서 결정론적으로 파생한 비밀번호로 synthetic 이메일 계정에 로그인해 **실제 Supabase Auth 세션**을 발급(`role`은 JWT 클레임이 아니라 `profiles.role` 컬럼으로 판별) |
 | 권한 분리 | 프론트엔드 라우팅 차단 + **RLS(Row Level Security)로 DB 레벨 차단**이 필수. 프론트엔드만으로 막지 않음 |
 | 실시간 동기화 | Supabase Realtime (구현은 Postgres Changes 구독 사용, Broadcast/Presence 아님), 3초 폴링 폴백 |
-| 사진 AI 분석 | Azure OpenAI (vision + function calling 지원 배포, 기본값 `gpt-4o-mini`) — 사용자가 Azure 비용을 직접 부담하기로 해서 Anthropic 직접 호출 대신 채택. **자동 호출 금지** — 사진을 찍는(=버튼을 누르는) 순간에만 호출. 용도 두 가지: (1) Phase 1 "사진으로 고르기" — 자유 분류가 아니라 **그 카테고리의 기존 항목 목록 중 하나로만 매칭**시켜 블라인드/조율/기록 로직을 그대로 재사용, (2) Phase 2 사진 아카이브 분류 |
+| 사진 AI 분석 | Azure OpenAI (vision + function calling 지원 배포, 기본값 `gpt-4o`/`gpt-4o-mini`) — 사용자가 Azure 비용을 직접 부담하기로 해서 Anthropic 직접 호출 대신 채택. **자동 호출 금지** — 사진을 찍거나(선택 제출 시) 라운드가 공개되는(비교 시) 그 순간에만 호출. 용도 두 가지: (1) Phase 1 "사진으로 고르기" — 항목 목록에 억지로 끼워맞추지 않고 **자유 라벨**로 설명하게 한 뒤, 공개 시점에 두 선택(사진/라벨)을 AI가 직접 비교해서 같은 걸 골랐는지 판정. AI가 사진을 못 알아보면 아이가 직접 라벨을 입력, (2) Phase 2 사진 아카이브 분류 |
 | 소프트 삭제 | 카테고리/항목은 하드 삭제 대신 `is_active=false` |
 | 확장성 원칙 | 전 테이블 `family_id` 기반. 코드에 "가족은 하나뿐"이라는 가정(하드코딩된 family_id, 환경변수 등)을 절대 심지 않을 것 |
 
@@ -32,7 +32,7 @@
   - 조율 도구 4종: 룰렛(랜덤 50:50), 번갈아하기(카테고리별 최근 승자 기억), 둘 다 하기, 직접 정하기
 - [ ] **기록(히스토리)**: 자녀 화면에는 "무엇을 골랐는지"만, 통계/양보지수는 절대 노출 금지
 - [ ] **개인정보 최소 요건**: 광고/추적 SDK 미포함, 부모가 자녀 데이터 전체 삭제 가능, 사진 비공개 스토리지
-- [ ] **사진으로 고르기**: 그리드 탭과 함께 제공되는 대체 입력 방식. 자녀가 사물을 촬영 → Claude Vision이 그 카테고리의 기존 항목 목록 중 하나로 매칭 제안 → 자녀가 "맞아요/아니요"로 확인해야 실제 선택으로 제출됨(AI가 임의로 확정하지 않음). 매칭 실패 시 그리드로 폴백. 자녀 role만 사용 가능(부모는 블라인드 선택에 참여하지 않음)
+- [ ] **사진으로 고르기**: 그리드 탭과 함께 제공되는 대체 입력 방식. 자녀가 사물을 촬영 → AI가 자유롭게 짧은 라벨로 설명(confidence 포함) → confidence가 낮으면 자녀가 직접 라벨을 타이핑, 높으면 "OO 맞아요?"로 확인 → 확인해야 실제 선택(`choices.label` + `photo_id`, `item_id`는 null)으로 제출됨. 공개 시점에 그리드끼리는 `item_id` 동등 비교(무료/즉시), 사진/라벨이 하나라도 끼면 AI가 양쪽을 직접 비교해서 판정하고 결과를 `rounds.ai_matched`에 캐싱(두 자녀가 각자 다시 계산하지 않도록). 자녀 role만 사용 가능(부모는 블라인드 선택에 참여하지 않음)
 
 **Phase 1에 포함하지 않는 것** (다음 스프린트): 사진 아카이브(부모가 지난 사진들을 모아보는 갤러리·재분류 UI), 부모 대시보드(양보 지수·추이 그래프), 카테고리 커스터마이징, 푸시 알림.
 
@@ -71,11 +71,16 @@ families(id, name, created_at)
 profiles(id, family_id, role[parent|child], name, avatar, pin_hash, created_at)
 categories(id, family_id, name, emoji, is_active)
 items(id, category_id, name, emoji, is_active)
-rounds(id, family_id, category_id, started_by, status[waiting|revealed|resolved], created_at)
-choices(id, round_id, profile_id, item_id, submitted_at)
-resolutions(id, round_id, type[roulette|turn|both|manual], winner_profile_id, conceded_profile_id, resolved_at)
+rounds(id, family_id, category_id, started_by, status[waiting|revealed|resolved], expected_participants,
+       ai_matched[nullable bool], created_at)
+  -- ai_matched: 공개 시점 AI 비교 결과 캐시. 그리드끼리만이면 계산할 필요 없이 null로 남아도 되고
+  -- (클라이언트가 item_id로 바로 비교), 사진이 끼어 AI 비교를 한 번 거쳤다면 true/false로 고정된다.
+choices(id, round_id, profile_id, item_id[nullable], label[nullable], photo_id[nullable → photos], submitted_at)
+  -- item_id 또는 label 중 최소 하나는 있어야 한다(그리드 선택 vs 사진/자유 입력 선택).
+resolutions(id, round_id, type[roulette|turn|both|manual|match], winner_profile_id, conceded_profile_id, resolved_at)
 photos(id, family_id, profile_id, round_id, item_id, storage_path, ai_category, ai_label, confirmed, created_at)
-  -- Phase 1부터 "사진으로 고르기"에서 실제로 쓰임(자녀가 AI 매칭 결과를 확인/confirmed=true 한 것만 기록).
+  -- Phase 1부터 "사진으로 고르기"에서 실제로 쓰임. 찍을 때마다 row가 생기고(재촬영해도 새 row),
+  -- 최종 제출된 선택이 choices.photo_id로 그 중 하나를 가리킨다.
   -- 부모가 이 사진들을 모아보는 갤러리 UI는 Phase 2.
 ```
 
@@ -84,6 +89,7 @@ Storage: `photos` 버킷(비공개). 경로 규칙 `{family_id}/{profile_id}/{ro
 RLS 정책 예시 방향(의사코드):
 - `profiles`: 자신의 `family_id` row만 SELECT
 - `choices`, `rounds`: 같은 `family_id`의 부모·자녀 모두 SELECT/INSERT 가능(단, 상대가 제출하기 전까지는 `item_id`를 마스킹해서 반환하는 뷰 또는 API 레벨 필터 필요 — 블라인드 유지)
+- `photos`: `choices`와 동일한 블라인드 규칙 — 본인 사진은 항상 보이고, 상대 사진은 라운드가 `waiting`을 벗어난 뒤에만 보인다. family 스코프만 걸고 라운드 상태를 안 보면 "사진으로 고르기" 쓸 때 블라인드가 새는 사고가 났었다(`0005_freeform_photo_choices.sql`에서 수정).
 - 향후 만들어질 `concession_logs`/`analytics_*` 테이블: `role = 'parent'`만 SELECT 가능
 
 ## 참고 문서 (개발 착수 전 합의된 내용)
@@ -98,5 +104,7 @@ RLS 정책 예시 방향(의사코드):
 2. **블라인드 유지**: 상대방이 제출하기 전, API 응답에 상대 선택 데이터를 절대 포함시키지 말 것(프론트에서 숨기는 방식 금지 — 응답 자체에서 제외).
 3. 사진 촬영 화면에는 "사람 없이 물건만 찍어주세요" 안내 문구를 항상 노출할 것 (Phase 1 "사진으로 고르기"부터 실사용됨).
 4. 새 마이그레이션 작성 시 `family_id` 없는 테이블을 추가하지 말 것.
-5. **AI 사진 매칭은 자유 분류가 아니라 그 라운드 카테고리의 기존 항목 목록 중 하나(또는 "매칭 없음")로만 응답하게 만들 것.** 임의의 새 라벨을 만들어 `choices.item_id`에 넣지 않는다 — 그래야 매칭/기록/조율 로직이 항목 그리드 방식과 동일하게 동작한다.
-6. AI가 제안한 항목은 자녀가 명시적으로 확인(맞아요)해야 `choices`에 제출된다. AI 응답을 확인 없이 바로 제출하지 말 것.
+5. **사진으로 고른 선택은 항목 목록에 끼워맞추지 않는다.** `item_id`는 null로 두고 AI가 만든 자유 라벨(또는 자녀가 직접 입력한 라벨)을 `choices.label`에 저장한다. "같은 걸 골랐는지"는 공개 시점에 `/api/rounds/[id]/compare`가 판정하고, 그 결과(`rounds.ai_matched`)를 캐싱해 두 자녀가 각자 다시 계산하지 않게 한다.
+6. AI가 제안한 라벨은 자녀가 명시적으로 확인(맞아요)해야 `choices`에 제출된다. confidence가 낮으면 확인 단계 없이 바로 자녀가 직접 라벨을 입력하게 한다 — AI 응답을 확인 없이 자동으로 제출하지 말 것.
+7. 폰카메라 사진은 원본을 그대로 올리지 말 것. Vercel 서버리스 함수의 요청 본문 크기 제한(~4.5MB)에 걸리고 느려진다 — 브라우저에서 축소(최대 1024px)+재압축(JPEG) 후 업로드한다(`src/lib/imageResize.ts`).
+8. 항목 탭처럼 실패 가능성이 낮은 제출 액션은 낙관적 업데이트(먼저 화면을 넘기고 실패하면 되돌리기)로 처리해 네트워크 왕복 시간만큼 "느리게" 느껴지지 않게 한다.
