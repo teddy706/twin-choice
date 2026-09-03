@@ -6,6 +6,8 @@ import { computeConcessionStats } from "@/lib/concessionStats";
 import { ConcessionChart } from "@/components/ConcessionChart";
 import { ObservationReport } from "@/components/ObservationReport";
 import { Topbar } from "@/components/Topbar";
+import { ChartIcon } from "@/components/icons";
+import { tileClassFor } from "@/lib/tilePalette";
 
 // 최소 표본: 이보다 적으면 "아직 데이터가 부족해요"만 보여준다 — 몇 번 안 되는 조율로
 // 성급하게 비율을 단정하지 않기 위함(퍼센트가 뻥튀기되어 보이는 걸 방지).
@@ -39,9 +41,11 @@ export default async function DashboardPage() {
   return (
     <div className="app-shell">
       <Topbar profile={profile} />
-      <Link href="/settings" className="mb-1.5 inline-block text-sm text-soft">← 설정</Link>
-      <h2 className="mb-1 text-[19px] font-bold">📊 대시보드</h2>
-      <p className="sub mb-4 text-sm text-soft">지금까지 총 {stats.totalResolvedRounds}번 조율했어요</p>
+      <Link href="/settings" className="mb-1.5 inline-block text-sm font-semibold text-soft">← 설정</Link>
+      <h2 className="mb-1 flex items-center gap-2 text-[19px] font-extrabold">
+        <ChartIcon size={20} /> 대시보드
+      </h2>
+      <p className="sub mb-4 text-sm font-semibold text-soft">지금까지 총 {stats.totalResolvedRounds}번 조율했어요</p>
 
       {notEnoughData ? (
         <div className="card py-10 text-center text-soft">
@@ -52,14 +56,14 @@ export default async function DashboardPage() {
       ) : (
         <>
           <div className="mb-3.5 grid grid-cols-2 gap-3">
-            {kidSeries.map((c) => {
+            {kidSeries.map((c, i) => {
               const count = stats.concedeCountByChild[c.id] ?? 0;
               const pct = stats.totalConcededRounds ? Math.round((count / stats.totalConcededRounds) * 100) : 0;
               return (
-                <div key={c.id} className="card mb-0" style={{ borderLeft: `4px solid ${c.color}` }}>
-                  <div className="mb-1 text-sm font-semibold">{c.avatar} {c.name}</div>
-                  <div className="text-2xl font-extrabold">{pct}%</div>
-                  <div className="text-xs text-soft">{count}번 양보</div>
+                <div key={c.id} className={`rounded-2xl border-2 border-ink p-4 ${tileClassFor(i)}`}>
+                  <div className="mb-2.5 text-sm font-bold">{c.avatar} {c.name}</div>
+                  <div className="text-[30px] font-extrabold leading-none">{pct}%</div>
+                  <div className="mt-1.5 text-xs font-bold text-ink/60">{count}번 양보</div>
                 </div>
               );
             })}

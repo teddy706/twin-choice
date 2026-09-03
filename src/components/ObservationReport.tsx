@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MagnifierIcon } from "@/components/icons";
 
 type ReportState =
   | { kind: "idle" }
@@ -35,9 +36,11 @@ export function ObservationReport() {
   }
 
   return (
-    <div className="card">
-      <h3 className="mb-1 font-bold">🔎 AI 관찰 요약</h3>
-      <p className="mb-3 text-xs text-soft">
+    <div className="mb-3.5 rounded-card border-2 border-ink bg-lilac p-5">
+      <h3 className="mb-1.5 flex items-center gap-2 font-extrabold">
+        <MagnifierIcon size={20} /> AI 관찰 요약
+      </h3>
+      <p className="mb-3 text-xs font-semibold text-ink/60">
         이건 심리 평가가 아니에요. 계속 마음에 걸리는 부분이 있다면 전문가와 상담해보세요.
       </p>
 
@@ -48,13 +51,15 @@ export function ObservationReport() {
       )}
 
       {state.kind === "loading" && (
-        <div className="flex items-center gap-2 text-sm text-soft">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#f0f0f0] border-t-accent" />
+        <div className="flex items-center gap-2 text-sm font-semibold text-ink/60">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-ink/20 border-t-ink" />
           AI가 정리하는 중...
         </div>
       )}
 
-      {state.kind === "ready" && <p className="text-sm leading-relaxed">{state.summary}</p>}
+      {state.kind === "ready" && (
+        <p className="rounded-2xl border-2 border-ink bg-white p-4 text-sm font-semibold leading-relaxed">{state.summary}</p>
+      )}
 
       {state.kind === "unavailable" && (
         <p className="text-sm text-soft">최근 2주 동안은 아직 데이터가 부족해요. 조금 더 쌓이면 다시 확인해보세요.</p>

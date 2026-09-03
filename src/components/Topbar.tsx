@@ -7,7 +7,7 @@ export function Topbar({ profile }: { profile: ProfileWithAvatar }) {
   return (
     <div className="mb-1.5 flex items-center justify-between">
       <div className="who-badge">
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: dotColor }} />
+        <span className="h-2.5 w-2.5 rounded-full border border-ink/30" style={{ background: dotColor }} />
         <Avatar url={profile.avatarUrl} emoji={profile.avatar} size={20} />
         {profile.name}
       </div>

@@ -9,8 +9,8 @@ body {
 
 body {
   background: linear-gradient(180deg, #fff9f0 0%, #fff3e0 100%);
-  color: #3a3a3a;
-  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  color: #1a1a1a;
+  font-family: "Gothic A1", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
 }
 
 @layer components {
@@ -18,30 +18,38 @@ body {
     @apply mx-auto flex min-h-screen max-w-[480px] flex-col px-4 pb-24 pt-5;
   }
   .card {
-    @apply mb-3.5 rounded-card bg-white p-5 shadow-card;
+    @apply mb-3.5 rounded-card border-2 border-ink bg-white p-5 shadow-card;
   }
   .btn {
     @apply mb-3 block w-full rounded-btn px-4 py-4 text-center text-[17px] font-bold text-white transition-transform active:scale-[0.97] disabled:opacity-50;
   }
   .btn-primary {
-    @apply bg-accent;
+    @apply border-2 border-ink bg-accent text-ink;
   }
   .btn-a {
-    @apply bg-a;
+    @apply border-2 border-ink bg-a text-ink;
   }
   .btn-b {
-    @apply bg-b;
+    @apply border-2 border-ink bg-b text-ink;
   }
   .btn-outline {
-    @apply border-2 border-[#eee] bg-white text-ink;
+    @apply border-2 border-ink bg-white text-ink;
   }
   .btn-ghost {
     @apply bg-transparent p-2.5 font-medium text-soft;
   }
   .item-tile {
-    @apply cursor-pointer rounded-2xl border-2 border-[#f0f0f0] bg-white p-4 text-center transition-all active:scale-95 active:bg-a-light;
+    @apply cursor-pointer rounded-2xl border-2 border-ink bg-white p-4 text-center transition-transform active:scale-95;
   }
   .who-badge {
-    @apply inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-[13px] font-bold shadow-card;
+    @apply inline-flex items-center gap-1.5 rounded-full border-2 border-ink bg-white px-3.5 py-1.5 text-[13px] font-bold;
   }
 }
+
+/* 카테고리/항목 타일처럼 부모가 만드는 임의 콘텐츠에 순환 배정하는 파스텔 팔레트.
+   참고 이미지의 "컬러 블록 카드 + 검은 선" 느낌 — src/lib/tilePalette.ts 의 배열과 짝을 맞춘다. */
+.tile-0 { background: theme("colors.a.tile"); }
+.tile-1 { background: theme("colors.b.tile"); }
+.tile-2 { background: theme("colors.butter"); }
+.tile-3 { background: theme("colors.sage"); }
+.tile-4 { background: theme("colors.lilac"); }

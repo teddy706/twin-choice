@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { resizeImageForUpload } from "@/lib/imageResize";
+import { tileClassFor } from "@/lib/tilePalette";
+import { KeyboardIcon, CameraIcon, RouletteIcon, TurnIcon, BothIcon, HandIcon } from "@/components/icons";
 import type { Choice, Item, Profile, Resolution, Round, Category } from "@/lib/types";
 
 type FamilyProfile = Pick<Profile, "id" | "name" | "avatar" | "role">;
@@ -379,26 +381,26 @@ export function RoundView({
 
         <div className="mb-4 flex gap-2">
           <button
-            className={`flex-1 rounded-xl py-2.5 text-[13px] font-bold ${pickMode === "grid" ? "bg-accent text-white" : "bg-[#f4f4f4] text-soft"}`}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-ink py-2.5 text-[13px] font-bold ${pickMode === "grid" ? "bg-ink text-white" : "bg-white text-ink"}`}
             onClick={() => switchPickMode("grid")}
           >
-            ⌨ 목록에서 고르기
+            <KeyboardIcon size={16} /> 목록에서 고르기
           </button>
           <button
-            className={`flex-1 rounded-xl py-2.5 text-[13px] font-bold ${pickMode === "camera" ? "bg-accent text-white" : "bg-[#f4f4f4] text-soft"}`}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-ink py-2.5 text-[13px] font-bold ${pickMode === "camera" ? "bg-ink text-white" : "bg-white text-ink"}`}
             onClick={() => switchPickMode("camera")}
           >
-            📷 사진으로 고르기
+            <CameraIcon size={16} /> 사진으로 고르기
           </button>
         </div>
 
         {pickMode === "grid" && (
           <>
             <div className="grid grid-cols-3 gap-2.5">
-              {items.map((it) => (
-                <div key={it.id} className="item-tile" onClick={() => submitChoice(it.id)}>
+              {items.map((it, i) => (
+                <div key={it.id} className={`item-tile ${tileClassFor(i)}`} onClick={() => submitChoice(it.id)}>
                   <span className="mb-1.5 block text-3xl">{it.emoji}</span>
-                  <span className="text-[13px] font-semibold">{it.name}</span>
+                  <span className="text-[13px] font-bold">{it.name}</span>
                 </div>
               ))}
             </div>
@@ -538,13 +540,13 @@ export function RoundView({
                 const p = profileById.get(c.profile_id);
                 const d = choiceDisplay(c);
                 return (
-                  <div key={c.id} className="flex-1 rounded-2xl bg-a-light p-4">
+                  <div key={c.id} className="flex-1 rounded-2xl border-2 border-ink bg-a-tile p-4">
                     {d.photoUrl ? (
                       <img src={d.photoUrl} alt={d.name} className="mx-auto mb-1.5 h-16 w-16 rounded-xl object-cover" />
                     ) : (
                       <span className="mb-1.5 block text-4xl">{d.emoji}</span>
                     )}
-                    <div className="text-sm">{p?.name}</div>
+                    <div className="text-sm font-bold">{p?.name}</div>
                   </div>
                 );
               })}
@@ -567,13 +569,13 @@ export function RoundView({
               const p = profileById.get(c.profile_id);
               const d = choiceDisplay(c);
               return (
-                <div key={c.id} className="flex-1 rounded-2xl bg-b-light p-4">
+                <div key={c.id} className="flex-1 rounded-2xl border-2 border-ink bg-b-tile p-4">
                   {d.photoUrl ? (
                     <img src={d.photoUrl} alt={d.name} className="mx-auto mb-1.5 h-16 w-16 rounded-xl object-cover" />
                   ) : (
                     <span className="mb-1.5 block text-4xl">{d.emoji}</span>
                   )}
-                  <div className="text-sm">{p?.name}: {d.name}</div>
+                  <div className="text-sm font-bold">{p?.name}: {d.name}</div>
                 </div>
               );
             })}
@@ -582,20 +584,31 @@ export function RoundView({
         </div>
 
         <div className="card">
-          <div className="mb-4 text-center text-5xl transition-transform duration-[1800ms]" style={{ transform: spinning ? "rotate(1080deg)" : "none" }}>
-            🎯
+          <div
+            className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border-2 border-ink bg-butter transition-transform duration-[1800ms]"
+            style={{ transform: spinning ? "rotate(1080deg)" : "none" }}
+          >
+            <RouletteIcon size={30} />
           </div>
-          <button className="btn btn-primary" disabled={spinning} onClick={spinRoulette}>
-            {spinning ? "돌리는 중..." : "🎡 룰렛 돌리기 (반반 확률)"}
+          <button className="btn btn-primary flex items-center justify-center gap-2" disabled={spinning} onClick={spinRoulette}>
+            <RouletteIcon size={18} /> {spinning ? "돌리는 중..." : "룰렛 돌리기 (반반 확률)"}
           </button>
-          <button className="btn btn-outline" onClick={resolveTurn}>🔄 번갈아하기 (이번엔 누구 차례?)</button>
-          <button className="btn btn-outline" onClick={resolveBoth}>🤝 둘 다 하기</button>
+          <button className="btn btn-outline flex items-center justify-center gap-2" onClick={resolveTurn}>
+            <TurnIcon size={18} /> 번갈아하기 (이번엔 누구 차례?)
+          </button>
+          <button className="btn btn-outline flex items-center justify-center gap-2" onClick={resolveBoth}>
+            <BothIcon size={18} /> 둘 다 하기
+          </button>
           <div className="small-row flex gap-2">
             {choices.map((c) => {
               const p = profileById.get(c.profile_id);
               return (
-                <button key={c.id} className="btn btn-ghost mb-0 flex-1 border-2 border-[#eee]" onClick={() => resolveManual(c.profile_id)}>
-                  ✋ {p?.name} 선택으로
+                <button
+                  key={c.id}
+                  className="btn btn-ghost mb-0 flex flex-1 items-center justify-center gap-1.5 border-2 border-ink"
+                  onClick={() => resolveManual(c.profile_id)}
+                >
+                  <HandIcon size={15} /> {p?.name} 선택으로
                 </button>
               );
             })}

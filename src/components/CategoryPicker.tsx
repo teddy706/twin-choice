@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { tileClassFor } from "@/lib/tilePalette";
 import type { Category } from "@/lib/types";
 
 type CategoryOption = Pick<Category, "id" | "name" | "emoji">;
@@ -48,14 +49,14 @@ export function CategoryPicker({
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
-        {categories.map((c) => (
+        {categories.map((c, i) => (
           <div
             key={c.id}
-            className={`item-tile ${loading === c.id ? "opacity-50" : ""}`}
+            className={`item-tile ${tileClassFor(i)} min-h-[150px] !text-left ${loading === c.id ? "opacity-50" : ""}`}
             onClick={() => !loading && startRound(c.id)}
           >
-            <span className="mb-1.5 block text-4xl">{c.emoji}</span>
-            <span className="text-sm font-semibold">{c.name}</span>
+            <span className="mb-3.5 block text-4xl">{c.emoji}</span>
+            <span className="text-[16px] font-extrabold">{c.name}</span>
           </div>
         ))}
       </div>

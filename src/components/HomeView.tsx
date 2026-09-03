@@ -40,7 +40,7 @@ export function HomeView({
   return (
     <div className="app-shell">
       <Topbar profile={profile} />
-      <h1 className="mb-5 mt-1 text-center text-2xl font-bold">👯 따로 또 같이</h1>
+      <h1 className="mb-5 mt-1 text-center font-display text-2xl">👯 따로 또 같이</h1>
 
       <PushNotificationToggle />
 
