@@ -1,6 +1,6 @@
-# CLAUDE.md — 따로 또 같이 (쌍둥이 선택 기록 앱)
+# AGENTS.md — 따로 또 같이 (쌍둥이 선택 기록 앱)
 
-이 파일은 프로젝트 루트에 두고 Claude Code가 매 세션 시작 시 참고하는 컨텍스트 문서입니다. **Phase 1은 완료됐고, 지금은 Phase 2를 아래 "Phase 2 진행 순서"대로 하나씩 순차 구현 중입니다.** Phase 3, 사업화, 연인용 확장 기능은 이 시점에 손대지 마세요.
+이 파일은 프로젝트 루트에 두고 Codex가 매 세션 시작 시 참고하는 컨텍스트 문서입니다. **Phase 1은 완료됐고, 지금은 Phase 2를 아래 "Phase 2 진행 순서"대로 하나씩 순차 구현 중입니다.** Phase 3, 사업화, 연인용 확장 기능은 이 시점에 손대지 마세요.
 
 ## 프로젝트 개요
 
@@ -39,7 +39,7 @@
 번호 순서대로 하나씩 진행하기로 합의됨. 앞 번호가 안 끝났으면 뒷 번호에 먼저 손대지 말 것.
 
 - [x] **1. 카테고리/항목 커스터마이징** — 부모가 카테고리/항목을 직접 추가·soft delete. `/settings/categories`, `/settings/categories/[id]`. `categories`/`items` INSERT/UPDATE RLS를 `role='parent'` + family 스코프로 오픈(`0006_category_customization.sql`). 자녀는 여전히 SELECT만.
-- [x] **2. 사진 아카이브** — 부모가 `photos` 테이블에 이미 쌓인 사진들을 갤러리로 모아보고 라벨 수정. `/settings/photos`. 조회는 기존 `photos_select`(블라인드 규칙 그대로 재사용, 새 정책 불필요)로 충분했고, 라벨 수정용 `photos_update`만 `role='parent'`로 새로 열었다(`0007_photo_archive.sql`). 부모 전용 화면이 늘어나서 하단 탭을 각 화면별로 나열하지 않고 `/settings` 허브로 통합(자녀 관리/카테고리/사진 아카이브 링크 모음).
+- [ ] **2. 사진 아카이브** — 부모가 `photos` 테이블에 이미 쌓인 사진들을 갤러리로 모아보고 재분류/라벨 수정. 업로드·1차 분류는 Phase 1 "사진으로 고르기"에서 이미 일어남.
 - [ ] **3. 부모 대시보드 (양보 지수·추이 그래프)** — **설계 주의**: `resolutions`/`choices`는 지금도 자녀가 SELECT 가능(개별 라운드 결과는 게임 진행상 자녀도 봐야 함). RLS는 행 단위라 "개별 결과는 보이되 집계는 숨기기"를 표현 못 하므로, 집계는 반드시 `role='parent'` 체크가 내장된 서버 함수(RPC)나 API 라우트로만 제공할 것 — 클라이언트에서 직접 GROUP BY 하지 말 것. 그래프는 `dataviz` 스킬 활용.
 - [ ] **4. AI 패턴 관찰 리포트** — 3번의 집계 인프라 위에 얹는다. 프레이밍 원칙(아래)은 이미 확정, 구현만 남음.
 - [ ] **5. 푸시 알림** — VAPID 키, 구독 저장 테이블, 서비스워커 push 이벤트가 새로 필요. 다른 항목과 성격이 달라 제일 마지막.
@@ -59,7 +59,7 @@
 7. **AI 호출은 명시적 트리거로만.** 사진 AI 분석과 동일한 원칙 — 부모가 버튼을 눌렀을 때만 호출하고 자동 실행하지 않는다.
 8. 위 원칙(1, 6 특히)은 실제 프롬프트 설계 시 시스템 프롬프트에 명시적 제약으로 넣어야 하고, 출력에 금지된 표현이 섞이지 않는지 확인하는 절차가 필요하다.
 
-**기술 방향(가안)**: Claude API에 최근 N개 라운드의 선택/양보 로그(집계된 수치)를 넘겨 위 원칙을 강제한 프롬프트로 관찰 요약 텍스트를 생성. RLS 상으로도 이 데이터는 `role='parent'`만 SELECT 가능해야 한다(기존 `concession_logs`/`analytics_*` 방향과 동일).
+**기술 방향(가안)**: Codex API에 최근 N개 라운드의 선택/양보 로그(집계된 수치)를 넘겨 위 원칙을 강제한 프롬프트로 관찰 요약 텍스트를 생성. RLS 상으로도 이 데이터는 `role='parent'`만 SELECT 가능해야 한다(기존 `concession_logs`/`analytics_*` 방향과 동일).
 
 ## 데이터 모델
 
@@ -88,13 +88,12 @@ RLS 정책 예시 방향(의사코드):
 - `choices`, `rounds`: 같은 `family_id`의 부모·자녀 모두 SELECT/INSERT 가능(단, 상대가 제출하기 전까지는 `item_id`를 마스킹해서 반환하는 뷰 또는 API 레벨 필터 필요 — 블라인드 유지)
 - `photos`: `choices`와 동일한 블라인드 규칙 — 본인 사진은 항상 보이고, 상대 사진은 라운드가 `waiting`을 벗어난 뒤에만 보인다. family 스코프만 걸고 라운드 상태를 안 보면 "사진으로 고르기" 쓸 때 블라인드가 새는 사고가 났었다(`0005_freeform_photo_choices.sql`에서 수정).
 - `categories`/`items`: SELECT는 family 구성원 누구나, INSERT/UPDATE는 `role='parent'` + family 스코프만(`0006_category_customization.sql`) — 커스터마이징은 부모 전용.
-- `photos` UPDATE(라벨 수정): `role='parent'` + family 스코프만(`0007_photo_archive.sql`). SELECT는 기존 블라인드 정책 그대로.
 - 향후 만들어질 `concession_logs`/`analytics_*` 테이블: `role = 'parent'`만 SELECT 가능. **집계 결과는 행 단위 RLS로 못 숨기므로 서버 함수/API 라우트에서 role 체크할 것** (Phase 2 진행 순서 3번 참고).
 
 ## 참고 문서 (개발 착수 전 합의된 내용)
 
-- **PRD**: 전체 요구사항, User Story, Success Metrics — https://claude.ai/code/artifact/b739e38e-055f-464f-b350-2a98213d2384
-- **개발 착수 전 결정 사항**: 배포형태·비용정책·확장성 설계의 근거 — https://claude.ai/code/artifact/c3811163-c11d-4f9a-a14b-0d6e8c99f8a9
+- **PRD**: 전체 요구사항, User Story, Success Metrics — https://Codex.ai/code/artifact/b739e38e-055f-464f-b350-2a98213d2384
+- **개발 착수 전 결정 사항**: 배포형태·비용정책·확장성 설계의 근거 — https://Codex.ai/code/artifact/c3811163-c11d-4f9a-a14b-0d6e8c99f8a9
 - **기존 프로토타입**: 블라인드 선택/조율 UI·로직의 1차 검증 버전(브라우저 저장소 기반, 정식 인증 없음). 이 프로젝트에 `reference/` 폴더로 복사해두고 UI·상태 흐름 참고용으로만 사용 — 저장 로직은 Supabase로 전면 교체.
 
 ## 코딩 시 주의사항

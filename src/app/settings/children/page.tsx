@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { requireProfile } from "@/lib/currentProfile";
 import { createClient } from "@/lib/supabase/server";
 import { ChildrenManager } from "@/components/ChildrenManager";
@@ -21,7 +22,8 @@ export default async function ChildrenSettingsPage() {
   return (
     <div className="app-shell">
       <Topbar profile={profile} />
-      <h2 className="mb-3.5 text-[19px] font-bold">⚙️ 자녀 관리</h2>
+      <Link href="/settings" className="mb-1.5 inline-block text-sm text-soft">← 설정</Link>
+      <h2 className="mb-3.5 text-[19px] font-bold">🧒 자녀 관리</h2>
       <ChildrenManager joinCode={family?.join_code ?? ""} initialChildren={children ?? []} />
     </div>
   );

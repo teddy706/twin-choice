@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { requireProfile } from "@/lib/currentProfile";
 import { createClient } from "@/lib/supabase/server";
 import { CategoriesManager } from "@/components/CategoriesManager";
@@ -29,6 +30,7 @@ export default async function CategoriesSettingsPage() {
   return (
     <div className="app-shell">
       <Topbar profile={profile} />
+      <Link href="/settings" className="mb-1.5 inline-block text-sm text-soft">← 설정</Link>
       <h2 className="mb-3.5 text-[19px] font-bold">🗂️ 카테고리 관리</h2>
       <CategoriesManager
         familyId={profile.family_id}

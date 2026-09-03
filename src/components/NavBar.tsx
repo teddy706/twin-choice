@@ -13,8 +13,9 @@ function navItemsFor(role: Role) {
     { href: "/history", icon: "📜", label: "기록" },
   ];
   if (role === "parent") {
-    base.push({ href: "/settings/categories", icon: "🗂️", label: "카테고리" });
-    base.push({ href: "/settings/children", icon: "⚙️", label: "자녀 관리" });
+    // 자녀 관리·카테고리·사진 아카이브처럼 부모 전용 화면이 계속 늘어날 예정이라
+    // 각각을 하단 탭에 나열하지 않고 "설정" 허브 하나로 모은다.
+    base.push({ href: "/settings", icon: "⚙️", label: "설정" });
   }
   return base;
 }
