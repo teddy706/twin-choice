@@ -4,6 +4,7 @@ import { requireProfile } from "@/lib/currentProfile";
 import { createClient } from "@/lib/supabase/server";
 import { computeConcessionStats } from "@/lib/concessionStats";
 import { ConcessionChart } from "@/components/ConcessionChart";
+import { ObservationReport } from "@/components/ObservationReport";
 import { Topbar } from "@/components/Topbar";
 
 // 최소 표본: 이보다 적으면 "아직 데이터가 부족해요"만 보여준다 — 몇 번 안 되는 조율로
@@ -68,6 +69,8 @@ export default async function DashboardPage() {
             <h3 className="mb-3 font-bold">주간 추이 (최근 8주)</h3>
             <ConcessionChart weekly={stats.weekly} kids={kidSeries} />
           </div>
+
+          <ObservationReport />
         </>
       )}
 

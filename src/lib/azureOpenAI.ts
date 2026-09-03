@@ -134,3 +134,66 @@ export async function compareChoices(left: ChoiceForCompare, right: ChoiceForCom
   const input = JSON.parse(toolCall.function.arguments) as { matched: boolean };
   return !!input.matched;
 }
+
+export interface ObservationChildStat {
+  name: string;
+  concedeCount: number;
+  concedeRatePct: number;
+}
+
+// Phase 2 "AI 패턴 관찰 리포트" — CLAUDE.md에 확정된 8원칙(진단 언어 금지, 성격 라벨링 금지 등)을
+// 시스템 프롬프트에 명시적 제약으로 강제한다. 입력은 이미 집계된 숫자뿐이다 — 자녀가 실제로
+// 뭘 골랐는지(item/label) 같은 원본 내용은 절대 넘기지 않는다(빈도·추세만 다루게 하기 위함).
+// 호출은 부모가 버튼을 눌렀을 때만(명시적 트리거) 일어난다 — 이 함수 자체는 자동 실행되지 않는다.
+export async function generateObservationSummary(params: {
+  windowLabel: string;
+  totalConceded: number;
+  children: ObservationChildStat[];
+}): Promise<string> {
+  const { windowLabel, totalConceded, children } = params;
+  const lines = children
+    .map((c) => `- ${c.name}: ${windowLabel} 동안 총 ${totalConceded}번의 조율 중 ${c.concedeCount}번 양보 (${c.concedeRatePct}%)`)
+    .join("\n");
+
+  const response = await getClient().chat.completions.create({
+    model: process.env.AZURE_OPENAI_DEPLOYMENT!,
+    max_tokens: 300,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "너는 부모에게 자녀들의 놀이/선택 조율 기록을 요약해주는 도우미다. 아래 원칙을 반드시 지켜라.",
+          "1. '심리 분석', '정상범위', '진단', '장애', '개입이 필요합니다' 같은 임상적·진단적 표현을 절대 쓰지 않는다.",
+          "2. 아이의 성격이나 기질을 규정하는 표현('소극적이다', '이기적이다', '양보를 잘 못한다' 등)을 쓰지 않는다.",
+          "3. 해석·조언·판단을 하지 않는다. 오직 빈도와 추세만 사실 그대로 나열한다 — 판단은 부모의 몫이다.",
+          "4. 한국어로 3~4문장, 담백하고 짧게 쓴다.",
+          "5. 이 데이터는 가족 앱에서 나온 몇 번의 놀이 선택 기록일 뿐이라는 한계를 벗어나는 결론을 내리지 않는다.",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: `기간: ${windowLabel}\n${lines}\n\n위 수치를 사실 나열 위주의 짧은 관찰 요약으로 정리해줘.`,
+      },
+    ],
+    tools: [
+      {
+        type: "function",
+        function: {
+          name: "write_summary",
+          description: "관찰 요약 텍스트를 작성한다.",
+          parameters: {
+            type: "object",
+            properties: { summary: { type: "string", description: "3~4문장의 한국어 관찰 요약." } },
+            required: ["summary"],
+          },
+        },
+      },
+    ],
+    tool_choice: { type: "function", function: { name: "write_summary" } },
+  });
+
+  const toolCall = response.choices[0]?.message?.tool_calls?.[0];
+  if (!toolCall || toolCall.type !== "function") return "";
+  const input = JSON.parse(toolCall.function.arguments) as { summary: string };
+  return input.summary ?? "";
+}
