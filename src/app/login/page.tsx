@@ -18,6 +18,9 @@ export default function LoginPickerPage() {
       <p className="mt-4 text-center text-sm text-soft">
         처음이신가요? <Link href="/signup" className="font-bold text-accent underline">부모 회원가입</Link>
       </p>
+      <p className="mt-2 text-center text-xs text-soft">
+        심사위원이신가요? <Link href="/demo" className="underline">데모 체험하기</Link>
+      </p>
     </div>
   );
 }
