@@ -40,7 +40,7 @@
 
 - [x] **1. 카테고리/항목 커스터마이징** — 부모가 카테고리/항목을 직접 추가·soft delete. `/settings/categories`, `/settings/categories/[id]`. `categories`/`items` INSERT/UPDATE RLS를 `role='parent'` + family 스코프로 오픈(`0006_category_customization.sql`). 자녀는 여전히 SELECT만.
 - [x] **2. 사진 아카이브** — 부모가 `photos` 테이블에 이미 쌓인 사진들을 갤러리로 모아보고 라벨 수정. `/settings/photos`. 조회는 기존 `photos_select`(블라인드 규칙 그대로 재사용, 새 정책 불필요)로 충분했고, 라벨 수정용 `photos_update`만 `role='parent'`로 새로 열었다(`0007_photo_archive.sql`). 부모 전용 화면이 늘어나서 하단 탭을 각 화면별로 나열하지 않고 `/settings` 허브로 통합(자녀 관리/카테고리/사진 아카이브 링크 모음).
-- [ ] **3. 부모 대시보드 (양보 지수·추이 그래프)** — **설계 주의**: `resolutions`/`choices`는 지금도 자녀가 SELECT 가능(개별 라운드 결과는 게임 진행상 자녀도 봐야 함). RLS는 행 단위라 "개별 결과는 보이되 집계는 숨기기"를 표현 못 하므로, 집계는 반드시 `role='parent'` 체크가 내장된 서버 함수(RPC)나 API 라우트로만 제공할 것 — 클라이언트에서 직접 GROUP BY 하지 말 것. 그래프는 `dataviz` 스킬 활용.
+- [x] **3. 부모 대시보드 (양보 지수·추이 그래프)** — `/settings/dashboard`. 집계(`src/lib/concessionStats.ts`)는 새 RPC/API 라우트 대신 **서버 컴포넌트 안에서 role='parent' 확인 후 계산**하는 방식으로 구현(클라이언트는 절대 GROUP BY 안 함 — 원칙은 지키되 굳이 새 엔드포인트를 안 만들어도 되는 기존 패턴). 최소 표본(조율 4회) 미만이면 "아직 데이터가 부족해요"만 표시. 주간 추이는 `dataviz` 스킬 절차대로: 카테고리컬 색상은 앱 기존 a/b 토큰 재사용 + 팔레트 검증기로 CVD 대비 확인(6.8, floor 구간 — 그래서 항상 범례+막대 위 숫자 직접 라벨을 같이 노출해 색상에만 의존하지 않게 함).
 - [ ] **4. AI 패턴 관찰 리포트** — 3번의 집계 인프라 위에 얹는다. 프레이밍 원칙(아래)은 이미 확정, 구현만 남음.
 - [ ] **5. 푸시 알림** — VAPID 키, 구독 저장 테이블, 서비스워커 push 이벤트가 새로 필요. 다른 항목과 성격이 달라 제일 마지막.
 
@@ -89,7 +89,7 @@ RLS 정책 예시 방향(의사코드):
 - `photos`: `choices`와 동일한 블라인드 규칙 — 본인 사진은 항상 보이고, 상대 사진은 라운드가 `waiting`을 벗어난 뒤에만 보인다. family 스코프만 걸고 라운드 상태를 안 보면 "사진으로 고르기" 쓸 때 블라인드가 새는 사고가 났었다(`0005_freeform_photo_choices.sql`에서 수정).
 - `categories`/`items`: SELECT는 family 구성원 누구나, INSERT/UPDATE는 `role='parent'` + family 스코프만(`0006_category_customization.sql`) — 커스터마이징은 부모 전용.
 - `photos` UPDATE(라벨 수정): `role='parent'` + family 스코프만(`0007_photo_archive.sql`). SELECT는 기존 블라인드 정책 그대로.
-- 향후 만들어질 `concession_logs`/`analytics_*` 테이블: `role = 'parent'`만 SELECT 가능. **집계 결과는 행 단위 RLS로 못 숨기므로 서버 함수/API 라우트에서 role 체크할 것** (Phase 2 진행 순서 3번 참고).
+- 양보 지수 집계는 별도 테이블 없이 `resolutions`/`rounds`를 그때그때 서버 컴포넌트에서 계산(`src/lib/concessionStats.ts`). **집계 결과는 행 단위 RLS로 못 숨기므로 반드시 role='parent' 확인 후 서버에서 계산하고 클라이언트로는 계산된 결과만 내려줄 것.**
 
 ## 참고 문서 (개발 착수 전 합의된 내용)
 
