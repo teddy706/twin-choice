@@ -1,19 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { resizeImageForUpload } from "@/lib/imageResize";
+import { Avatar } from "@/components/Avatar";
 
-type Child = { id: string; name: string; avatar: string; created_at: string };
+type Child = { id: string; name: string; avatar: string; avatar_photo_path: string | null; created_at: string };
 
 const AVATAR_OPTIONS = ["🧒", "👦", "👧", "🐻", "🐰", "🦁", "🐼", "🦊"];
 
-export function ChildrenManager({ joinCode, initialChildren }: { joinCode: string; initialChildren: Child[] }) {
+export function ChildrenManager({
+  familyId,
+  joinCode,
+  initialChildren,
+  avatarUrls,
+}: {
+  familyId: string;
+  joinCode: string;
+  initialChildren: Child[];
+  avatarUrls: Record<string, string>;
+}) {
   const [children, setChildren] = useState<Child[]>(initialChildren);
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>(avatarUrls);
   const [name, setName] = useState("");
   const [avatar, setAvatar] = useState(AVATAR_OPTIONS[0]);
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [photoUploadingId, setPhotoUploadingId] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const targetChildId = useRef<string | null>(null);
 
   async function addChild(e: React.FormEvent) {
     e.preventDefault();
@@ -30,7 +49,7 @@ export function ChildrenManager({ joinCode, initialChildren }: { joinCode: strin
         setError(data.error ?? "자녀 프로필을 만들지 못했어요.");
         return;
       }
-      setChildren((prev) => [...prev, { ...data.child, created_at: new Date().toISOString() }]);
+      setChildren((prev) => [...prev, { ...data.child, avatar_photo_path: null, created_at: new Date().toISOString() }]);
       setName("");
       setPin("");
     } finally {
@@ -51,8 +70,67 @@ export function ChildrenManager({ joinCode, initialChildren }: { joinCode: strin
     }
   }
 
+  function pickPhotoFor(childId: string) {
+    setPhotoError(null);
+    targetChildId.current = childId;
+    fileInputRef.current?.click();
+  }
+
+  async function handlePhotoSelected(file: File) {
+    const childId = targetChildId.current;
+    if (!childId) return;
+    setPhotoUploadingId(childId);
+    setPhotoError(null);
+
+    try {
+      // 512px 면 아바타 용도로 충분하고, 원본을 그대로 올리면 느리고 용량도 커진다(이미지는
+      // 항상 브라우저에서 축소+재압축 후 업로드 — src/lib/imageResize.ts).
+      const resized = await resizeImageForUpload(file, 512, 0.85);
+      const base64 = resized.dataUrl.split(",")[1];
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const storagePath = `${familyId}/${childId}.jpg`;
+
+      const supabase = createClient();
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(storagePath, bytes, { contentType: "image/jpeg", upsert: true });
+      if (uploadError) {
+        setPhotoError("사진을 올리지 못했어요.");
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ avatar_photo_path: storagePath })
+        .eq("id", childId);
+      if (updateError) {
+        setPhotoError("사진을 연결하지 못했어요.");
+        return;
+      }
+
+      setPhotoUrls((prev) => ({ ...prev, [childId]: resized.dataUrl }));
+      setChildren((prev) => prev.map((c) => (c.id === childId ? { ...c, avatar_photo_path: storagePath } : c)));
+    } catch {
+      setPhotoError("사진을 처리하지 못했어요.");
+    } finally {
+      setPhotoUploadingId(null);
+    }
+  }
+
   return (
     <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handlePhotoSelected(file);
+          e.target.value = "";
+        }}
+      />
+
       <div className="card">
         <p className="mb-1 text-sm text-soft">가족 코드 (자녀 로그인 화면에서 입력)</p>
         <div className="rounded-2xl bg-accent/10 py-3 text-center text-2xl font-extrabold tracking-[0.3em] text-accent">
@@ -62,11 +140,22 @@ export function ChildrenManager({ joinCode, initialChildren }: { joinCode: strin
 
       <div className="card">
         <h3 className="mb-3 font-bold">자녀 목록</h3>
+        <p className="mb-3 text-xs text-soft">사진을 탭하면 아이 얼굴 사진으로 바꿀 수 있어요.</p>
         {children.length === 0 && <p className="text-sm text-soft">아직 등록된 자녀가 없어요.</p>}
         {children.map((c) => (
           <div key={c.id} className="flex items-center justify-between border-b border-[#f4f4f4] py-2.5 last:border-none">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">{c.avatar}</span>
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => pickPhotoFor(c.id)}
+                disabled={photoUploadingId === c.id}
+                className="relative h-10 w-10 shrink-0 rounded-full disabled:opacity-50"
+              >
+                <Avatar url={photoUrls[c.id]} emoji={c.avatar} size={40} />
+                <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[9px] shadow">
+                  {photoUploadingId === c.id ? "…" : "📷"}
+                </span>
+              </button>
               <span className="font-semibold">{c.name}</span>
             </div>
             {confirmDeleteId === c.id ? (
@@ -85,6 +174,7 @@ export function ChildrenManager({ joinCode, initialChildren }: { joinCode: strin
             )}
           </div>
         ))}
+        {photoError && <p className="mt-2 text-sm font-semibold text-red-500">{photoError}</p>}
       </div>
 
       <form className="card" onSubmit={addChild}>

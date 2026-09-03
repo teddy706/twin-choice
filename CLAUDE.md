@@ -43,6 +43,7 @@
 - [x] **3. 부모 대시보드 (양보 지수·추이 그래프)** — `/settings/dashboard`. 집계(`src/lib/concessionStats.ts`)는 새 RPC/API 라우트 대신 **서버 컴포넌트 안에서 role='parent' 확인 후 계산**하는 방식으로 구현(클라이언트는 절대 GROUP BY 안 함 — 원칙은 지키되 굳이 새 엔드포인트를 안 만들어도 되는 기존 패턴). 최소 표본(조율 4회) 미만이면 "아직 데이터가 부족해요"만 표시. 주간 추이는 `dataviz` 스킬 절차대로: 카테고리컬 색상은 앱 기존 a/b 토큰 재사용 + 팔레트 검증기로 CVD 대비 확인(6.8, floor 구간 — 그래서 항상 범례+막대 위 숫자 직접 라벨을 같이 노출해 색상에만 의존하지 않게 함).
 - [x] **4. AI 패턴 관찰 리포트** — `/settings/dashboard`의 "🔎 AI 관찰 요약" 카드. 3번의 집계(최근 2주 버킷 합)를 그대로 재사용하고, `role='parent'` 확인은 API 라우트(`/api/dashboard/observation-report`)에서 다시 한번(클라이언트 role 신뢰 안 함). 최근 2주 조율 4회 미만이면 AI 호출 자체를 안 하고 "아직 데이터가 부족해요"만 반환(원칙 4). 8원칙을 시스템 프롬프트에 명시적으로 강제(`generateObservationSummary`, `src/lib/azureOpenAI.ts`)하고, 출력 직전에 금지어 필터(`src/lib/observationSafety.ts`)로 한 번 더 걸러 걸리면 아예 안 보여줌(원칙 8). 버튼 클릭 전엔 아무것도 호출 안 함(원칙 7), 디스클레이머는 하드코딩으로 항상 표시(원칙 2). 실제 생성 예시(정상 통과): "OO는 최근 2주 동안 4번의 조율 중 4번을 양보했습니다." — 진단·성격 언어 없이 사실 나열만.
 - [ ] **5. 푸시 알림** — VAPID 키, 구독 저장 테이블, 서비스워커 push 이벤트가 새로 필요. 다른 항목과 성격이 달라 제일 마지막.
+- [x] **6. 자녀 프로필 사진** (계획 밖 추가 요청) — 이모지 아바타 대신/추가로 실제 얼굴 사진 업로드. `profiles.avatar_photo_path` + 비공개 `avatars` 스토리지 버킷. 부모가 `/settings/children`에서 자녀별로 업로드/교체(`0008_child_avatar_photos.sql`). **의도적으로 손대지 않은 부분**: 자녀 로그인 화면의 "누구예요?" 프로필 선택 단계(PIN 입력 *전*, 가족 코드만으로 도달 가능)는 이모지만 유지 — 거기서 실제 얼굴 사진을 보여주면 가족 코드만 알아도(비밀번호 없이) 아이 사진을 볼 수 있게 되는 프라이버시 문제가 생기기 때문. 실제 사진은 PIN 로그인 이후 화면(Topbar 등)에만 노출.
 
 ### AI 패턴 관찰 리포트 (Phase 2, 4번 — 프레이밍 원칙 확정)
 
@@ -65,7 +66,8 @@
 
 ```sql
 families(id, name, created_at)
-profiles(id, family_id, role[parent|child], name, avatar, pin_hash, created_at)
+profiles(id, family_id, role[parent|child], name, avatar, avatar_photo_path[nullable], pin_hash, created_at)
+  -- avatar_photo_path 있으면 그 사진을, 없으면 avatar 이모지를 보여준다(UI 폴백, src/components/Avatar.tsx).
 categories(id, family_id, name, emoji, is_active)
 items(id, category_id, name, emoji, is_active)
 rounds(id, family_id, category_id, started_by, status[waiting|revealed|resolved], expected_participants,
@@ -83,6 +85,8 @@ photos(id, family_id, profile_id, round_id, item_id, storage_path, ai_category, 
 
 Storage: `photos` 버킷(비공개). 경로 규칙 `{family_id}/{profile_id}/{round_id}-{timestamp}.ext`, RLS는 경로의 family_id/profile_id 세그먼트를 `auth.uid()` 기반 헬퍼 함수와 대조해서 검사(`supabase/migrations/0004_photos_storage.sql`).
 
+Storage: `avatars` 버킷(비공개, 프로필 사진). 경로 규칙 `{family_id}/{profile_id}.jpg` — 프로필당 한 장, 재업로드시 upsert로 덮어씀. `photos`와 달리 블라인드 대상이 아니라 family 구성원이면 항상 조회 가능, 쓰기는 부모만(`0008_child_avatar_photos.sql`).
+
 RLS 정책 예시 방향(의사코드):
 - `profiles`: 자신의 `family_id` row만 SELECT
 - `choices`, `rounds`: 같은 `family_id`의 부모·자녀 모두 SELECT/INSERT 가능(단, 상대가 제출하기 전까지는 `item_id`를 마스킹해서 반환하는 뷰 또는 API 레벨 필터 필요 — 블라인드 유지)
@@ -90,6 +94,7 @@ RLS 정책 예시 방향(의사코드):
 - `categories`/`items`: SELECT는 family 구성원 누구나, INSERT/UPDATE는 `role='parent'` + family 스코프만(`0006_category_customization.sql`) — 커스터마이징은 부모 전용.
 - `photos` UPDATE(라벨 수정): `role='parent'` + family 스코프만(`0007_photo_archive.sql`). SELECT는 기존 블라인드 정책 그대로.
 - 양보 지수 집계는 별도 테이블 없이 `resolutions`/`rounds`를 그때그때 서버 컴포넌트에서 계산(`src/lib/concessionStats.ts`). **집계 결과는 행 단위 RLS로 못 숨기므로 반드시 role='parent' 확인 후 서버에서 계산하고 클라이언트로는 계산된 결과만 내려줄 것.**
+- `profiles` UPDATE: `role='parent'` + family 스코프(`0008_child_avatar_photos.sql`에서 처음 오픈). RLS는 행 단위까지만 막을 수 있어서, `role`/`pin_hash`/`family_id` 같은 민감 컬럼까지 열리지 않도록 컬럼 단위 GRANT로 `avatar`/`avatar_photo_path` 두 필드만 UPDATE 가능하게 추가로 좁혔다.
 
 ## 참고 문서 (개발 착수 전 합의된 내용)
 

@@ -14,17 +14,27 @@ export default async function ChildrenSettingsPage() {
   const { data: family } = await supabase.from("families").select("join_code, name").eq("id", profile.family_id).maybeSingle();
   const { data: children } = await supabase
     .from("profiles")
-    .select("id, name, avatar, created_at")
+    .select("id, name, avatar, avatar_photo_path, created_at")
     .eq("family_id", profile.family_id)
     .eq("role", "child")
     .order("created_at");
+
+  const childList = children ?? [];
+  const avatarUrls: Record<string, string> = {};
+  await Promise.all(
+    childList.map(async (c) => {
+      if (!c.avatar_photo_path) return;
+      const { data: signed } = await supabase.storage.from("avatars").createSignedUrl(c.avatar_photo_path, 3600);
+      if (signed) avatarUrls[c.id] = signed.signedUrl;
+    })
+  );
 
   return (
     <div className="app-shell">
       <Topbar profile={profile} />
       <Link href="/settings" className="mb-1.5 inline-block text-sm text-soft">← 설정</Link>
       <h2 className="mb-3.5 text-[19px] font-bold">🧒 자녀 관리</h2>
-      <ChildrenManager joinCode={family?.join_code ?? ""} initialChildren={children ?? []} />
+      <ChildrenManager familyId={profile.family_id} joinCode={family?.join_code ?? ""} initialChildren={childList} avatarUrls={avatarUrls} />
     </div>
   );
 }

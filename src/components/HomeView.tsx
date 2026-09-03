@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { NavBar } from "@/components/NavBar";
-import type { Profile } from "@/lib/types";
+import type { ProfileWithAvatar } from "@/lib/currentProfile";
 
 type ActiveRound = {
   id: string;
@@ -21,7 +21,7 @@ export function HomeView({
   myChoiceSubmitted,
   starterName,
 }: {
-  profile: Profile;
+  profile: ProfileWithAvatar;
   activeRound: ActiveRound;
   myChoiceSubmitted: boolean;
   starterName: string | null;

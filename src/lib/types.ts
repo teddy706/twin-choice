@@ -15,6 +15,8 @@ export interface Profile {
   role: Role;
   name: string;
   avatar: string;
+  // 실제 프로필 사진(있으면 이 사진을, 없으면 avatar 이모지를 보여준다 — UI에서 폴백 처리).
+  avatar_photo_path: string | null;
   pin_hash: string | null;
   created_at: string;
 }

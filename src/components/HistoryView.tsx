@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Topbar } from "@/components/Topbar";
 import { NavBar } from "@/components/NavBar";
-import type { Profile } from "@/lib/types";
+import type { ProfileWithAvatar } from "@/lib/currentProfile";
 
 type CategoryOption = { id: string; name: string; emoji: string };
 type ProfileOption = { id: string; name: string; avatar: string };
@@ -27,7 +27,7 @@ export function HistoryView({
   choices,
   photoUrls,
 }: {
-  profile: Profile;
+  profile: ProfileWithAvatar;
   categories: CategoryOption[];
   resolutions: ResolutionRow[];
   profiles: ProfileOption[];
