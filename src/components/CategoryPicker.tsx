@@ -36,6 +36,12 @@ export function CategoryPicker({
       setLoading(null);
       return;
     }
+    // 실패해도 게임 진행엔 지장 없는 부가 기능이라 응답을 기다리지 않는다(fire-and-forget).
+    fetch("/api/push/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roundId: data.id, event: "started" }),
+    }).catch(() => {});
     router.push(`/round/${data.id}`);
   }
 

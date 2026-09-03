@@ -137,10 +137,23 @@ export function RoundView({
     return { emoji: "📷", name: c.label ?? "", photoUrl: c.photo_id ? photoUrls[c.photo_id] : undefined };
   }
 
+  // 이 제출이 라운드를 공개 상태로 만드는 "마지막 한 명"이면 상대에게 푸시를 보낸다.
+  // 실패해도 게임 진행엔 지장 없는 부가 기능이라 응답을 기다리지 않는다(fire-and-forget).
+  function notifyIfThisRevealsRound(countBeforeThisSubmission: number) {
+    if (countBeforeThisSubmission + 1 >= round.expected_participants) {
+      fetch("/api/push/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roundId: round.id, event: "revealed" }),
+      }).catch(() => {});
+    }
+  }
+
   // 탭 즉시 화면을 넘기고(낙관적 업데이트), 저장은 뒤에서 처리한다 — 실패하면 되돌린다.
   // 네트워크 왕복을 기다렸다가 화면이 넘어가면 탭이 "느리게" 느껴지기 때문.
   async function submitChoice(itemId: string) {
     setError(null);
+    const countBefore = choices.length;
     const tempId = `${TEMP_PREFIX}${Date.now()}`;
     const optimistic: ChoiceRow = {
       id: tempId,
@@ -165,6 +178,7 @@ export function RoundView({
       return;
     }
     setChoices((prev) => prev.map((c) => (c.id === tempId ? data : c)));
+    notifyIfThisRevealsRound(countBefore);
   }
 
   async function submitPhotoChoice(label: string, photoId: string) {
@@ -175,6 +189,7 @@ export function RoundView({
     setPhotoSubmitting(true);
     setPhotoError(null);
 
+    const countBefore = choices.length;
     const tempId = `${TEMP_PREFIX}${Date.now()}`;
     const optimistic: ChoiceRow = {
       id: tempId,
@@ -200,6 +215,7 @@ export function RoundView({
       return;
     }
     setChoices((prev) => prev.map((c) => (c.id === tempId ? data : c)));
+    notifyIfThisRevealsRound(countBefore);
     setPhotoSubmitting(false);
   }
 

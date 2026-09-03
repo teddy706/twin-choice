@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { NavBar } from "@/components/NavBar";
+import { PushNotificationToggle } from "@/components/PushNotificationToggle";
 import type { ProfileWithAvatar } from "@/lib/currentProfile";
 
 type ActiveRound = {
@@ -40,6 +41,8 @@ export function HomeView({
     <div className="app-shell">
       <Topbar profile={profile} />
       <h1 className="mb-5 mt-1 text-center text-2xl font-bold">👯 따로 또 같이</h1>
+
+      <PushNotificationToggle />
 
       {showBanner && (
         <div className="card border-2 border-a bg-a-light">
