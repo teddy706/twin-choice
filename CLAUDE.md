@@ -17,10 +17,10 @@
 | 프론트엔드 | Next.js (App Router) + React + Tailwind CSS |
 | 백엔드/DB | Supabase (PostgreSQL + Auth + Storage + Realtime), 무료 티어 |
 | 인증 — 부모 | Supabase Auth 이메일 로그인 |
-| 인증 — 자녀 | 이메일 없음. `profile_id + 4자리 PIN` → 커스텀 세션(역할 클레임 `role: child`) |
+| 인증 — 자녀 | 이메일 없음. `profile_id + 4자리 PIN` → family 코드로 특정한 뒤, PIN에서 결정론적으로 파생한 비밀번호로 synthetic 이메일 계정에 로그인해 **실제 Supabase Auth 세션**을 발급(`role`은 JWT 클레임이 아니라 `profiles.role` 컬럼으로 판별) |
 | 권한 분리 | 프론트엔드 라우팅 차단 + **RLS(Row Level Security)로 DB 레벨 차단**이 필수. 프론트엔드만으로 막지 않음 |
-| 실시간 동기화 | Supabase Realtime (Broadcast + Presence), 3초 폴링 폴백 |
-| 사진 AI 분석 | Claude API Vision. **자동 호출 금지** — "AI로 분류하기" 버튼 클릭 시에만 호출, 항목명 기준 캐싱으로 재호출 최소화 |
+| 실시간 동기화 | Supabase Realtime (구현은 Postgres Changes 구독 사용, Broadcast/Presence 아님), 3초 폴링 폴백 |
+| 사진 AI 분석 | Claude API Vision (현재 `claude-haiku-4-5`). **자동 호출 금지** — 사진을 찍는(=버튼을 누르는) 순간에만 호출. 용도 두 가지: (1) Phase 1 "사진으로 고르기" — 자유 분류가 아니라 **그 카테고리의 기존 항목 목록 중 하나로만 매칭**시켜 블라인드/조율/기록 로직을 그대로 재사용, (2) Phase 2 사진 아카이브 분류 |
 | 소프트 삭제 | 카테고리/항목은 하드 삭제 대신 `is_active=false` |
 | 확장성 원칙 | 전 테이블 `family_id` 기반. 코드에 "가족은 하나뿐"이라는 가정(하드코딩된 family_id, 환경변수 등)을 절대 심지 않을 것 |
 
@@ -32,8 +32,9 @@
   - 조율 도구 4종: 룰렛(랜덤 50:50), 번갈아하기(카테고리별 최근 승자 기억), 둘 다 하기, 직접 정하기
 - [ ] **기록(히스토리)**: 자녀 화면에는 "무엇을 골랐는지"만, 통계/양보지수는 절대 노출 금지
 - [ ] **개인정보 최소 요건**: 광고/추적 SDK 미포함, 부모가 자녀 데이터 전체 삭제 가능, 사진 비공개 스토리지
+- [ ] **사진으로 고르기**: 그리드 탭과 함께 제공되는 대체 입력 방식. 자녀가 사물을 촬영 → Claude Vision이 그 카테고리의 기존 항목 목록 중 하나로 매칭 제안 → 자녀가 "맞아요/아니요"로 확인해야 실제 선택으로 제출됨(AI가 임의로 확정하지 않음). 매칭 실패 시 그리드로 폴백. 자녀 role만 사용 가능(부모는 블라인드 선택에 참여하지 않음)
 
-**Phase 1에 포함하지 않는 것** (다음 스프린트): 사진 업로드+AI 분류, 부모 대시보드(양보 지수·추이 그래프·사진 아카이브), 카테고리 커스터마이징, 푸시 알림.
+**Phase 1에 포함하지 않는 것** (다음 스프린트): 사진 아카이브(부모가 지난 사진들을 모아보는 갤러리·재분류 UI), 부모 대시보드(양보 지수·추이 그래프), 카테고리 커스터마이징, 푸시 알림.
 
 ## Phase 2/3 스코프 (계획만 기록 — 지금 구현 금지)
 
@@ -41,9 +42,9 @@
 
 ### 부모 대시보드 (Phase 2)
 
-- 양보 지수, 추이 그래프, 사진 아카이브
+- 양보 지수, 추이 그래프
 - 카테고리/항목 커스터마이징
-- 사진 업로드 + AI 분류 연결 (`photos` 테이블은 Phase 1에 이미 존재)
+- 사진 아카이브(부모가 지난 라운드의 사진들을 갤러리로 모아보기, 재분류/라벨 수정) — 업로드·1차 분류 자체는 Phase 1 "사진으로 고르기"에서 이미 일어나고 `photos` 테이블에 쌓인다
 - 푸시 알림
 
 ### AI 패턴 관찰 리포트 (Phase 2/3, 신규)
@@ -74,8 +75,11 @@ rounds(id, family_id, category_id, started_by, status[waiting|revealed|resolved]
 choices(id, round_id, profile_id, item_id, submitted_at)
 resolutions(id, round_id, type[roulette|turn|both|manual], winner_profile_id, conceded_profile_id, resolved_at)
 photos(id, family_id, profile_id, round_id, item_id, storage_path, ai_category, ai_label, confirmed, created_at)
-  -- photos 테이블은 스키마만 Phase 1에서 만들어두고 실제 기능은 Phase 2에서 연결
+  -- Phase 1부터 "사진으로 고르기"에서 실제로 쓰임(자녀가 AI 매칭 결과를 확인/confirmed=true 한 것만 기록).
+  -- 부모가 이 사진들을 모아보는 갤러리 UI는 Phase 2.
 ```
+
+Storage: `photos` 버킷(비공개). 경로 규칙 `{family_id}/{profile_id}/{round_id}-{timestamp}.ext`, RLS는 경로의 family_id/profile_id 세그먼트를 `auth.uid()` 기반 헬퍼 함수와 대조해서 검사(`supabase/migrations/0004_photos_storage.sql`).
 
 RLS 정책 예시 방향(의사코드):
 - `profiles`: 자신의 `family_id` row만 SELECT
@@ -92,5 +96,7 @@ RLS 정책 예시 방향(의사코드):
 
 1. **양보 지수·통계는 자녀 화면 어디에도 절대 노출하지 말 것.** 컴포넌트 트리 상에서도 자녀 role일 때 해당 컴포넌트가 아예 마운트되지 않아야 함 (조건부 `display:none`이 아니라 렌더링 자체를 스킵).
 2. **블라인드 유지**: 상대방이 제출하기 전, API 응답에 상대 선택 데이터를 절대 포함시키지 말 것(프론트에서 숨기는 방식 금지 — 응답 자체에서 제외).
-3. 사진 업로드 UI를 만들 때 "사람 없이 물건만 찍어주세요" 안내 문구를 촬영 화면에 기본 노출(Phase 2 대비 지금 문구만 넣어둬도 무방).
+3. 사진 촬영 화면에는 "사람 없이 물건만 찍어주세요" 안내 문구를 항상 노출할 것 (Phase 1 "사진으로 고르기"부터 실사용됨).
 4. 새 마이그레이션 작성 시 `family_id` 없는 테이블을 추가하지 말 것.
+5. **AI 사진 매칭은 자유 분류가 아니라 그 라운드 카테고리의 기존 항목 목록 중 하나(또는 "매칭 없음")로만 응답하게 만들 것.** 임의의 새 라벨을 만들어 `choices.item_id`에 넣지 않는다 — 그래야 매칭/기록/조율 로직이 항목 그리드 방식과 동일하게 동작한다.
+6. AI가 제안한 항목은 자녀가 명시적으로 확인(맞아요)해야 `choices`에 제출된다. AI 응답을 확인 없이 바로 제출하지 말 것.

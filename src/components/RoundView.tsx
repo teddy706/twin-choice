@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -35,6 +35,16 @@ export function RoundView({
   const [submitting, setSubmitting] = useState(false);
   const [spinning, setSpinning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // "사진으로 고르기" 상태
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pickMode, setPickMode] = useState<"grid" | "camera">("grid");
+  const [photoStatus, setPhotoStatus] = useState<"idle" | "analyzing" | "confirm" | "unmatched">("idle");
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState<{ itemId: string | null; label: string; storagePath: string } | null>(
+    null
+  );
 
   const profileById = useMemo(() => new Map(familyProfiles.map((p) => [p.id, p])), [familyProfiles]);
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
@@ -104,6 +114,91 @@ export function RoundView({
     }
     setChoices((prev) => [...prev, data]);
     setSubmitting(false);
+  }
+
+  async function handlePhotoFile(file: File) {
+    setPhotoError(null);
+    setPhotoStatus("analyzing");
+
+    const dataUrl: string = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("read failed"));
+      reader.readAsDataURL(file);
+    }).catch(() => "");
+
+    if (!dataUrl) {
+      setPhotoError("사진을 읽지 못했어요.");
+      setPhotoStatus("idle");
+      return;
+    }
+
+    setCapturedPreview(dataUrl);
+    const base64 = dataUrl.split(",")[1];
+
+    try {
+      const res = await fetch(`/api/rounds/${round.id}/classify-photo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64, mediaType: file.type }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPhotoError(data.error ?? "사진을 분석하지 못했어요.");
+        setPhotoStatus("idle");
+        return;
+      }
+      setAiSuggestion({ itemId: data.matchedItemId, label: data.label, storagePath: data.storagePath });
+      setPhotoStatus(data.matchedItemId ? "confirm" : "unmatched");
+    } catch {
+      setPhotoError("사진을 분석하지 못했어요.");
+      setPhotoStatus("idle");
+    }
+  }
+
+  async function confirmAiChoice() {
+    if (!aiSuggestion?.itemId) return;
+    setSubmitting(true);
+    setError(null);
+    const supabase = createClient();
+    const { data, error: insertError } = await supabase
+      .from("choices")
+      .insert({ round_id: round.id, profile_id: profile.id, item_id: aiSuggestion.itemId })
+      .select("id, profile_id, item_id, submitted_at")
+      .single();
+    if (insertError || !data) {
+      setError("선택을 저장하지 못했어요.");
+      setSubmitting(false);
+      return;
+    }
+    // AI 매칭 결과 확인 성공 시에만 photos row 를 남긴다(거절/재촬영한 사진은 기록하지 않음).
+    await supabase.from("photos").insert({
+      family_id: round.family_id,
+      profile_id: profile.id,
+      round_id: round.id,
+      item_id: aiSuggestion.itemId,
+      storage_path: aiSuggestion.storagePath,
+      ai_category: category?.name ?? null,
+      ai_label: aiSuggestion.label,
+      confirmed: true,
+    });
+    setChoices((prev) => [...prev, data]);
+    setSubmitting(false);
+  }
+
+  function retakePhoto() {
+    setAiSuggestion(null);
+    setCapturedPreview(null);
+    setPhotoStatus("idle");
+    fileInputRef.current?.click();
+  }
+
+  function switchPickMode(mode: "grid" | "camera") {
+    setPickMode(mode);
+    setAiSuggestion(null);
+    setCapturedPreview(null);
+    setPhotoStatus("idle");
+    setPhotoError(null);
   }
 
   async function insertResolution(payload: Pick<Resolution, "type" | "winner_profile_id" | "conceded_profile_id">) {
@@ -184,31 +279,123 @@ export function RoundView({
   }
 
   // ---- 1. 아직 내 선택을 안 냈다면: 블라인드 선택 화면 ----
-  if (!myChoice) {
+  // 부모는 블라인드 선택에 참여하지 않으므로(위 관전 화면 참고) 이 분기는 자녀 role에서만 탄다.
+  if (profile.role === "child" && !myChoice) {
     return (
       <div className="app-shell">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handlePhotoFile(file);
+            e.target.value = "";
+          }}
+        />
+
         <h2 className="mb-1 text-[19px] font-bold">{catLabel} — 좋아하는 걸 골라봐!</h2>
         <p className="sub mb-4 -mt-1 text-sm text-soft">상대방은 네가 뭘 골랐는지 아직 못 봐요 🤫</p>
-        <div className="grid grid-cols-3 gap-2.5">
-          {items.map((it) => (
-            <div
-              key={it.id}
-              className={`item-tile ${submitting ? "pointer-events-none opacity-50" : ""}`}
-              onClick={() => submitChoice(it.id)}
-            >
-              <span className="mb-1.5 block text-3xl">{it.emoji}</span>
-              <span className="text-[13px] font-semibold">{it.name}</span>
-            </div>
-          ))}
+
+        <div className="mb-4 flex gap-2">
+          <button
+            className={`flex-1 rounded-xl py-2.5 text-[13px] font-bold ${pickMode === "grid" ? "bg-accent text-white" : "bg-[#f4f4f4] text-soft"}`}
+            onClick={() => switchPickMode("grid")}
+          >
+            ⌨ 목록에서 고르기
+          </button>
+          <button
+            className={`flex-1 rounded-xl py-2.5 text-[13px] font-bold ${pickMode === "camera" ? "bg-accent text-white" : "bg-[#f4f4f4] text-soft"}`}
+            onClick={() => switchPickMode("camera")}
+          >
+            📷 사진으로 고르기
+          </button>
         </div>
-        {error && <p className="mt-3 text-sm font-semibold text-red-500">{error}</p>}
+
+        {pickMode === "grid" && (
+          <>
+            <div className="grid grid-cols-3 gap-2.5">
+              {items.map((it) => (
+                <div
+                  key={it.id}
+                  className={`item-tile ${submitting ? "pointer-events-none opacity-50" : ""}`}
+                  onClick={() => submitChoice(it.id)}
+                >
+                  <span className="mb-1.5 block text-3xl">{it.emoji}</span>
+                  <span className="text-[13px] font-semibold">{it.name}</span>
+                </div>
+              ))}
+            </div>
+            {error && <p className="mt-3 text-sm font-semibold text-red-500">{error}</p>}
+          </>
+        )}
+
+        {pickMode === "camera" && (
+          <div className="card">
+            {photoStatus === "idle" && (
+              <>
+                <p className="mb-1 text-center text-sm text-soft">
+                  좋아하는 걸 사진으로 찍으면 AI가 뭔지 맞혀볼게요!
+                </p>
+                <p className="mb-3 text-center text-xs text-soft">사람은 나오지 않게, 물건만 찍어주세요 🙂</p>
+                <button className="btn btn-primary mb-0" onClick={() => fileInputRef.current?.click()}>
+                  📷 사진 찍기
+                </button>
+                {photoError && <p className="mt-3 text-sm font-semibold text-red-500">{photoError}</p>}
+              </>
+            )}
+
+            {photoStatus === "analyzing" && (
+              <div className="text-center">
+                {capturedPreview && (
+                  <img src={capturedPreview} alt="찍은 사진" className="mx-auto mb-3 h-40 w-40 rounded-2xl object-cover" />
+                )}
+                <div className="spinner mx-auto my-3 h-10 w-10 animate-spin rounded-full border-[5px] border-[#f0f0f0] border-t-accent" />
+                <p className="text-sm text-soft">AI가 사진을 보는 중...</p>
+              </div>
+            )}
+
+            {photoStatus === "confirm" && aiSuggestion && (
+              <div className="text-center">
+                {capturedPreview && (
+                  <img src={capturedPreview} alt="찍은 사진" className="mx-auto mb-3 h-40 w-40 rounded-2xl object-cover" />
+                )}
+                <p className="mb-4 font-bold">
+                  {itemById.get(aiSuggestion.itemId ?? "")?.emoji} {aiSuggestion.label} 맞아요?
+                </p>
+                <button className="btn btn-primary" disabled={submitting} onClick={confirmAiChoice}>
+                  {submitting ? "저장하는 중..." : "네, 맞아요!"}
+                </button>
+                <button className="btn btn-outline mb-0" onClick={retakePhoto}>
+                  다시 찍을래요
+                </button>
+              </div>
+            )}
+
+            {photoStatus === "unmatched" && (
+              <div className="text-center">
+                {capturedPreview && (
+                  <img src={capturedPreview} alt="찍은 사진" className="mx-auto mb-3 h-40 w-40 rounded-2xl object-cover" />
+                )}
+                <p className="mb-4 text-sm text-soft">음, 뭔지 잘 모르겠어요. 다시 찍거나 목록에서 골라줄래?</p>
+                <button className="btn btn-outline" onClick={retakePhoto}>다시 찍기</button>
+                <button className="btn btn-ghost mb-0" onClick={() => switchPickMode("grid")}>목록에서 고를래요</button>
+              </div>
+            )}
+
+            {error && <p className="mt-3 text-sm font-semibold text-red-500">{error}</p>}
+          </div>
+        )}
       </div>
     );
   }
 
   // ---- 2. 냈지만 상대는 아직 -> 대기 화면 ----
+  // 부모는 위 관전 화면에서 !revealed 인 동안 이미 걸러지므로, 여기 도달했다면 myChoice 는 항상 존재한다.
   if (!revealed) {
-    const myItem = itemById.get(myChoice.item_id);
+    const myItem = itemById.get(myChoice!.item_id);
     return (
       <div className="app-shell items-center justify-center">
         <div className="card center text-center">
@@ -225,7 +412,6 @@ export function RoundView({
   // ---- 3. 공개됨, 아직 조율 결과 없음 ----
   if (!resolution) {
     if (matched) {
-      const myItem = itemById.get(myChoice.item_id);
       return (
         <div className="app-shell items-center justify-center">
           <div className="card center text-center">
