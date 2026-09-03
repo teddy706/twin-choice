@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { resizeImageForUpload } from "@/lib/imageResize";
 import type { Choice, Item, Profile, Resolution, Round, Category } from "@/lib/types";
 
 type FamilyProfile = Pick<Profile, "id" | "name" | "avatar" | "role">;
@@ -120,27 +121,25 @@ export function RoundView({
     setPhotoError(null);
     setPhotoStatus("analyzing");
 
-    const dataUrl: string = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(new Error("read failed"));
-      reader.readAsDataURL(file);
-    }).catch(() => "");
-
-    if (!dataUrl) {
-      setPhotoError("사진을 읽지 못했어요.");
+    // 폰 카메라 원본(수 MB)을 그대로 보내면 서버 요청 크기 제한에 걸리거나 너무 느려지므로
+    // 업로드 전에 축소+재압축한다(입력 포맷과 무관하게 image/jpeg 로 정규화됨).
+    let resized;
+    try {
+      resized = await resizeImageForUpload(file);
+    } catch {
+      setPhotoError("이 사진은 처리할 수 없어요. 다시 찍어줄래?");
       setPhotoStatus("idle");
       return;
     }
 
-    setCapturedPreview(dataUrl);
-    const base64 = dataUrl.split(",")[1];
+    setCapturedPreview(resized.dataUrl);
+    const base64 = resized.dataUrl.split(",")[1];
 
     try {
       const res = await fetch(`/api/rounds/${round.id}/classify-photo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: base64, mediaType: file.type }),
+        body: JSON.stringify({ imageBase64: base64, mediaType: resized.mediaType }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -151,7 +150,7 @@ export function RoundView({
       setAiSuggestion({ itemId: data.matchedItemId, label: data.label, storagePath: data.storagePath });
       setPhotoStatus(data.matchedItemId ? "confirm" : "unmatched");
     } catch {
-      setPhotoError("사진을 분석하지 못했어요.");
+      setPhotoError("네트워크가 불안정해서 실패했어요. 다시 시도해줄래?");
       setPhotoStatus("idle");
     }
   }

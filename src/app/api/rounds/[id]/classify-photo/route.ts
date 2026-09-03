@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { classifyPhotoAgainstItems } from "@/lib/azureOpenAI";
 
-const MAX_BASE64_LENGTH = 8_000_000; // 대략 원본 6MB 상당
+// 클라이언트가 업로드 전에 1024px로 축소해서 보내므로 정상 요청은 수백 KB 수준이다.
+// Vercel 서버리스 함수의 요청 본문 크기 제한(~4.5MB)보다 한참 낮게 잡아 여유를 둔다.
+const MAX_BASE64_LENGTH = 3_000_000; // 대략 원본 2.2MB 상당
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const supabase = createClient();
