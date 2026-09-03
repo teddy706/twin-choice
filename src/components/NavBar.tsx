@@ -13,6 +13,7 @@ function navItemsFor(role: Role) {
     { href: "/history", icon: "📜", label: "기록" },
   ];
   if (role === "parent") {
+    base.push({ href: "/settings/categories", icon: "🗂️", label: "카테고리" });
     base.push({ href: "/settings/children", icon: "⚙️", label: "자녀 관리" });
   }
   return base;
