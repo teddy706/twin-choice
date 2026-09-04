@@ -9,7 +9,14 @@ import type { ProfileWithAvatar } from "@/lib/currentProfile";
 type CategoryOption = { id: string; name: string; emoji: string };
 type ProfileOption = { id: string; name: string; avatar: string };
 type ItemOption = { id: string; name: string; emoji: string; category_id: string };
-type ChoiceRow = { round_id: string; profile_id: string; item_id: string | null; label: string | null; photo_id: string | null };
+type ChoiceRow = {
+  round_id: string;
+  profile_id: string;
+  item_id: string | null;
+  label: string | null;
+  photo_id: string | null;
+  reason: string | null;
+};
 type ResolutionRow = {
   id: string;
   round_id: string;
@@ -132,6 +139,17 @@ export function HistoryView({
                     );
                   })}
                 </div>
+                {roundChoices.some((c) => c.reason) && (
+                  <div className="mt-1 space-y-0.5">
+                    {roundChoices
+                      .filter((c) => c.reason)
+                      .map((c) => (
+                        <div key={c.round_id + c.profile_id + "-reason"} className="text-xs italic text-soft">
+                          {profileById.get(c.profile_id)?.name}: &ldquo;{c.reason}&rdquo;
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
             );
           })

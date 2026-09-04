@@ -63,6 +63,7 @@ export interface Choice {
   item_id: string | null;
   label: string | null;
   photo_id: string | null;
+  reason: string | null; // "왜 이게 좋아?" 음성을 텍스트로 바꾼 것(선택 사항, 오디오 자체는 저장 안 함)
   submitted_at: string;
 }
 

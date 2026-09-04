@@ -23,7 +23,7 @@ export default async function HistoryPage() {
 
   const roundIds = (resolutions ?? []).map((r: any) => r.round_id);
   const { data: choices } = roundIds.length
-    ? await supabase.from("choices").select("round_id, profile_id, item_id, label, photo_id").in("round_id", roundIds)
+    ? await supabase.from("choices").select("round_id, profile_id, item_id, label, photo_id, reason").in("round_id", roundIds)
     : { data: [] };
 
   const photoIds = (choices ?? []).map((c) => c.photo_id).filter((id): id is string => !!id);

@@ -7,13 +7,14 @@ import { createClient } from "@/lib/supabase/client";
 import { resizeImageForUpload } from "@/lib/imageResize";
 import { tileClassFor } from "@/lib/tilePalette";
 import { KeyboardIcon, CameraIcon, RouletteIcon, TurnIcon, BothIcon, HandIcon } from "@/components/icons";
+import { VoiceReasonRecorder } from "@/components/VoiceReasonRecorder";
 import type { Choice, Item, Profile, Resolution, Round, Category } from "@/lib/types";
 
 type FamilyProfile = Pick<Profile, "id" | "name" | "avatar" | "role">;
 type RoundRow = Pick<Round, "id" | "family_id" | "category_id" | "status" | "expected_participants" | "started_by" | "ai_matched">;
 type ItemOption = Pick<Item, "id" | "name" | "emoji">;
 type CategoryInfo = Pick<Category, "id" | "name" | "emoji"> | null;
-type ChoiceRow = Pick<Choice, "id" | "profile_id" | "item_id" | "label" | "photo_id" | "submitted_at">;
+type ChoiceRow = Pick<Choice, "id" | "profile_id" | "item_id" | "label" | "photo_id" | "reason" | "submitted_at">;
 
 const TEMP_PREFIX = "temp-";
 
@@ -86,7 +87,7 @@ export function RoundView({
     async function refetch() {
       const { data: freshChoices } = await supabase
         .from("choices")
-        .select("id, profile_id, item_id, label, photo_id, submitted_at")
+        .select("id, profile_id, item_id, label, photo_id, reason, submitted_at")
         .eq("round_id", round.id);
       if (freshChoices) {
         setChoices((prev) => {
@@ -176,6 +177,7 @@ export function RoundView({
       item_id: itemId,
       label: null,
       photo_id: null,
+      reason: null,
       submitted_at: new Date().toISOString(),
     };
     setChoices((prev) => [...prev, optimistic]);
@@ -184,7 +186,7 @@ export function RoundView({
     const { data, error: insertError } = await supabase
       .from("choices")
       .insert({ round_id: round.id, profile_id: profile.id, item_id: itemId })
-      .select("id, profile_id, item_id, label, photo_id, submitted_at")
+      .select("id, profile_id, item_id, label, photo_id, reason, submitted_at")
       .single();
 
     if (insertError || !data) {
@@ -212,6 +214,7 @@ export function RoundView({
       item_id: null,
       label,
       photo_id: photoId,
+      reason: null,
       submitted_at: new Date().toISOString(),
     };
     setChoices((prev) => [...prev, optimistic]);
@@ -220,7 +223,7 @@ export function RoundView({
     const { data, error: insertError } = await supabase
       .from("choices")
       .insert({ round_id: round.id, profile_id: profile.id, item_id: null, label, photo_id: photoId })
-      .select("id, profile_id, item_id, label, photo_id, submitted_at")
+      .select("id, profile_id, item_id, label, photo_id, reason, submitted_at")
       .single();
 
     if (insertError || !data) {
@@ -520,6 +523,7 @@ export function RoundView({
           <div className="spinner mx-auto my-6 h-11 w-11 animate-spin rounded-full border-[5px] border-[#f0f0f0] border-t-accent" />
           <p className="text-sm text-soft">상대방이 고르는 중... 잠깐 기다려줘 😊</p>
         </div>
+        <VoiceReasonRecorder roundId={round.id} choiceId={myChoice!.id} initialReason={myChoice!.reason} />
         <Link href="/home" className="btn btn-ghost text-center">나중에 결과 볼게요</Link>
       </div>
     );
@@ -560,6 +564,7 @@ export function RoundView({
                       <span className="mb-1.5 block text-4xl">{d.emoji}</span>
                     )}
                     <div className="text-sm font-bold">{p?.name}</div>
+                    {c.reason && <div className="mt-1 text-xs italic text-ink/60">&ldquo;{c.reason}&rdquo;</div>}
                   </div>
                 );
               })}
@@ -589,6 +594,7 @@ export function RoundView({
                     <span className="mb-1.5 block text-4xl">{d.emoji}</span>
                   )}
                   <div className="text-sm font-bold">{p?.name}: {d.name}</div>
+                  {c.reason && <div className="mt-1 text-xs italic text-ink/60">&ldquo;{c.reason}&rdquo;</div>}
                 </div>
               );
             })}
