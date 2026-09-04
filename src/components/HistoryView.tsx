@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Topbar } from "@/components/Topbar";
 import { NavBar } from "@/components/NavBar";
+import { PrioritySuggestion } from "@/components/PrioritySuggestion";
 import type { ProfileWithAvatar } from "@/lib/currentProfile";
 
 type CategoryOption = { id: string; name: string; emoji: string };
@@ -52,14 +53,21 @@ export function HistoryView({
 
   const filtered = resolutions.filter((r) => tab === "all" || r.rounds.category_id === tab);
 
-  const tagLabel = (type: string) => (type === "match" ? "일치" : type === "both" ? "둘다" : "조율");
-  const tagStyle = (type: string) =>
-    type === "match" ? "bg-[#E4FCE8] text-[#1B9E4B]" : "bg-[#FFF0E0] text-[#D9822B]";
+  const tagLabel: Record<string, string> = { match: "일치", both: "둘다", manual: "직접", turn: "번갈아", roulette: "룰렛" };
+  const tagStyle: Record<string, string> = {
+    match: "bg-[#E4FCE8] text-[#1B9E4B]",
+    both: "bg-[#DFF7F4] text-[#1B8A7D]",
+    manual: "bg-[#F0F0F0] text-[#5A5A5A]",
+    turn: "bg-[#E6F0FF] text-[#2B5FAD]",
+    roulette: "bg-[#FFF0E0] text-[#D9822B]",
+  };
 
   return (
     <div className="app-shell">
       <Topbar profile={profile} />
       <h2 className="mb-3.5 text-[19px] font-bold">📜 기록</h2>
+
+      <PrioritySuggestion />
 
       <div className="mb-4 flex gap-2 overflow-x-auto">
         <button
@@ -87,11 +95,24 @@ export function HistoryView({
             const cat = categoryById.get(r.rounds.category_id);
             const roundChoices = choicesByRound.get(r.round_id) ?? [];
             const d = new Date(r.resolved_at);
-            const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+            const dateStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+            const winner = r.winner_profile_id ? profileById.get(r.winner_profile_id) : null;
             return (
-              <div key={r.id} className="flex items-center gap-2.5 border-b border-[#f4f4f4] py-3 last:border-none">
-                <div className="w-[52px] shrink-0 text-[11px] text-soft">{dateStr}</div>
-                <div className="flex-1 text-sm">
+              <div key={r.id} className="border-b border-[#f4f4f4] py-3 last:border-none">
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-soft">{dateStr}</span>
+                  <div className="flex shrink-0 gap-1.5">
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${tagStyle[r.type] ?? "bg-[#F0F0F0] text-[#5A5A5A]"}`}>
+                      {tagLabel[r.type] ?? r.type}
+                    </span>
+                    {winner && (
+                      <span className="rounded-full bg-[#FFF3D6] px-2 py-0.5 text-[11px] font-bold text-[#9A6B00]">
+                        {winner.avatar} {winner.name} 우선
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-sm">
                   {cat?.emoji} {cat?.name} —{" "}
                   {roundChoices.map((c, i) => {
                     const p = profileById.get(c.profile_id);
@@ -110,9 +131,6 @@ export function HistoryView({
                       </span>
                     );
                   })}
-                </div>
-                <div className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${tagStyle(r.type)}`}>
-                  {tagLabel(r.type)}
                 </div>
               </div>
             );

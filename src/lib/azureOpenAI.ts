@@ -197,3 +197,61 @@ export async function generateObservationSummary(params: {
   const input = JSON.parse(toolCall.function.arguments) as { summary: string };
   return input.summary ?? "";
 }
+
+// "이번엔 누구에게 우선권을 주면 좋을지" 제안. 위 관찰 요약과 같은 안전장치를 쓰되,
+// 공정성 판단(누구를 제안할지)은 AI가 아니라 호출하는 쪽(코드)이 이미 계산해서 넘긴다 —
+// 이 함수는 그 결정을 부드러운 한국어 문장으로 표현하는 역할만 한다.
+export async function generateStartPrioritySuggestion(params: {
+  windowLabel: string;
+  suggestedChildName: string | null; // null이면 둘이 비슷함
+  children: { name: string; concedeCount: number }[];
+}): Promise<string> {
+  const { windowLabel, suggestedChildName, children } = params;
+  const lines = children.map((c) => `- ${c.name}: ${windowLabel} 동안 ${c.concedeCount}번 양보함`).join("\n");
+  const conclusion = suggestedChildName
+    ? `이 수치를 근거로 이번엔 ${suggestedChildName}에게 먼저 고를 기회를 주자고 부드럽게 제안해줘.`
+    : "두 아이의 수치가 비슷하니, 굳이 한쪽을 정하지 말고 비슷하다는 걸 담백하게 말해줘.";
+
+  const response = await getClient().chat.completions.create({
+    model: process.env.AZURE_OPENAI_DEPLOYMENT!,
+    max_tokens: 200,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "너는 아이 둘이 있는 가족에게 '이번엔 누가 먼저 고르면 좋을지' 부드럽게 제안해주는 도우미다. 아래 원칙을 반드시 지켜라.",
+          "1. '심리 분석', '정상범위', '진단', '장애', '개입이 필요합니다' 같은 임상적·진단적 표현을 절대 쓰지 않는다.",
+          "2. 아이의 성격이나 기질을 규정하는 표현('소극적이다', '이기적이다', '양보를 잘 못한다' 등)을 쓰지 않는다.",
+          "3. 해석·조언·판단을 하지 않는다. 오직 빈도 사실만 근거로 삼는다 — 최종 결정은 가족의 몫이다.",
+          "4. 명령이 아니라 제안으로 말한다. '~해야 해', '~하세요' 같은 명령형 대신 '~는 어때?' 같은 제안형만 쓴다.",
+          "5. 한국어로 2~3문장, 짧고 다정하게 쓴다. 이모지는 쓰지 않는다.",
+          "6. 이 데이터는 가족 앱에서 나온 몇 번의 놀이 선택 기록일 뿐이라는 한계를 벗어나는 결론을 내리지 않는다.",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: `기간: ${windowLabel}\n${lines}\n\n${conclusion}`,
+      },
+    ],
+    tools: [
+      {
+        type: "function",
+        function: {
+          name: "suggest_priority",
+          description: "이번엔 누구에게 먼저 고를 기회를 주면 좋을지 제안 문장을 작성한다.",
+          parameters: {
+            type: "object",
+            properties: { suggestion: { type: "string", description: "2~3문장의 한국어 제안 문장." } },
+            required: ["suggestion"],
+          },
+        },
+      },
+    ],
+    tool_choice: { type: "function", function: { name: "suggest_priority" } },
+  });
+
+  const toolCall = response.choices[0]?.message?.tool_calls?.[0];
+  if (!toolCall || toolCall.type !== "function") return "";
+  const input = JSON.parse(toolCall.function.arguments) as { suggestion: string };
+  return input.suggestion ?? "";
+}
