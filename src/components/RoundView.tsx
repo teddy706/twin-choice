@@ -83,7 +83,7 @@ export function RoundView({
       )
       .subscribe();
 
-    const poll = setInterval(async () => {
+    async function refetch() {
       const { data: freshChoices } = await supabase
         .from("choices")
         .select("id, profile_id, item_id, label, photo_id, submitted_at")
@@ -103,11 +103,24 @@ export function RoundView({
         .eq("round_id", round.id)
         .maybeSingle();
       setResolution(freshResolution ?? null);
-    }, 3000);
+    }
+
+    const poll = setInterval(refetch, 3000);
+
+    // 화면이 잠기거나 앱이 백그라운드로 가면 브라우저가 위 setInterval을 스로틀링/정지시켜서
+    // 상대방 반응이 몇 초~수십 초씩 늦게 보이는 문제가 있었다. 다시 포그라운드로 돌아온 순간
+    // 다음 폴링 틱을 기다리지 않고 바로 한 번 더 가져오게 해서 "복귀하자마자 최신 상태"를 보장한다.
+    function handleVisible() {
+      if (document.visibilityState === "visible") refetch();
+    }
+    document.addEventListener("visibilitychange", handleVisible);
+    window.addEventListener("focus", refetch);
 
     return () => {
       supabase.removeChannel(channel);
       clearInterval(poll);
+      document.removeEventListener("visibilitychange", handleVisible);
+      window.removeEventListener("focus", refetch);
     };
   }, [round.id]);
 

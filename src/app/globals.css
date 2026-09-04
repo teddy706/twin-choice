@@ -11,6 +11,11 @@ body {
   background: linear-gradient(180deg, #fff9f0 0%, #fff3e0 100%);
   color: #1a1a1a;
   font-family: "Gothic A1", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  /* 모바일 탭 반응 지연 버그 수정: touch-action이 어디에도 선언돼 있지 않아서 브라우저가
+     "탭인지 더블탭-줌인지" 판별하는 지연에 그대로 노출돼 있었다(viewport의 userScalable=false만으론
+     최신 iOS Safari에서 더 이상 충분하지 않음). manipulation은 스크롤/핀치줌은 그대로 두고
+     더블탭-줌 판별만 없애서 탭이 즉시 인식되게 한다. */
+  touch-action: manipulation;
 }
 
 @layer components {
@@ -40,6 +45,7 @@ body {
   }
   .item-tile {
     @apply cursor-pointer rounded-2xl border-2 border-ink bg-white p-4 text-center transition-transform active:scale-95;
+    touch-action: manipulation;
   }
   .who-badge {
     @apply inline-flex items-center gap-1.5 rounded-full border-2 border-ink bg-white px-3.5 py-1.5 text-[13px] font-bold;
