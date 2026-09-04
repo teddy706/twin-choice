@@ -33,6 +33,22 @@ export function CategoryPicker({
       .single();
 
     if (insertError || !data) {
+      // 상대방이 같은 카테고리로 거의 동시에 라운드를 먼저 시작한 경우, DB의 유니크 제약
+      // (family_id+category_id 당 대기 중인 라운드는 하나만 허용)에 걸려 이 insert가 실패한다.
+      // 실패로 끝내지 않고, 상대가 만든 그 라운드를 찾아서 대신 들어간다.
+      if (insertError?.code === "23505") {
+        const { data: existing } = await supabase
+          .from("rounds")
+          .select("id")
+          .eq("family_id", familyId)
+          .eq("category_id", categoryId)
+          .eq("status", "waiting")
+          .maybeSingle();
+        if (existing) {
+          router.push(`/round/${existing.id}`);
+          return;
+        }
+      }
       setError("라운드를 시작하지 못했어요. 다시 시도해주세요.");
       setLoading(null);
       return;
