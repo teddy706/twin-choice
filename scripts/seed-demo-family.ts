@@ -80,6 +80,28 @@ const DEFAULT_CATEGORIES = [
       { name: "만들기", emoji: "✂️" },
     ],
   },
+  {
+    name: "옷 고르기",
+    emoji: "👕",
+    items: [
+      { name: "티셔츠", emoji: "👕" },
+      { name: "바지", emoji: "👖" },
+      { name: "원피스", emoji: "👗" },
+      { name: "모자", emoji: "🧢" },
+      { name: "신발", emoji: "👟" },
+    ],
+  },
+  {
+    name: "음식 고르기",
+    emoji: "🍔",
+    items: [
+      { name: "피자", emoji: "🍕" },
+      { name: "치킨", emoji: "🍗" },
+      { name: "김밥", emoji: "🍙" },
+      { name: "라면", emoji: "🍜" },
+      { name: "햄버거", emoji: "🍔" },
+    ],
+  },
 ] as const;
 
 const DEMO_JOIN_CODE = "DEMO26";
