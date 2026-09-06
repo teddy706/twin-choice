@@ -30,9 +30,21 @@ export function HomeView({
   const router = useRouter();
 
   // 3초 폴링: 상대방이 새 라운드를 시작했는지 홈 화면에 조용히 반영한다.
+  // RoundView.tsx와 동일한 이유로 visibilitychange/focus 보정도 같이 건다 — 화면이 잠기거나
+  // 앱이 백그라운드로 가면 브라우저가 setInterval을 스로틀링/정지시켜서, 상대가 이미 라운드를
+  // 시작했는데도 한참 뒤에야(혹은 다시 켤 때까지) 배너가 안 뜨는 문제가 있었다.
   useEffect(() => {
     const t = setInterval(() => router.refresh(), 3000);
-    return () => clearInterval(t);
+    function handleVisible() {
+      if (document.visibilityState === "visible") router.refresh();
+    }
+    document.addEventListener("visibilitychange", handleVisible);
+    window.addEventListener("focus", router.refresh);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", handleVisible);
+      window.removeEventListener("focus", router.refresh);
+    };
   }, [router]);
 
   const showBanner = activeRound && !myChoiceSubmitted && starterName;
