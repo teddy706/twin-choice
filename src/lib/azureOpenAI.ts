@@ -20,14 +20,16 @@ function getClient() {
   return client;
 }
 
-// 음성 "이유 남기기"용 Whisper는 별도 배포라(gpt-4o 계열과 다른 모델) 클라이언트를 분리한다.
+// 음성 "이유 남기기"용 Whisper는 별도 배포일 뿐 아니라 완전히 다른 Azure 리소스에 만들어졌다
+// (엔드포인트/키가 gpt-4o 쪽과 다름 + 오디오 API는 채팅 API와 API 버전 체계도 다름) —
+// 그래서 세 값(엔드포인트/키/버전) 전부 별도 환경변수로 분리한다.
 let whisperClient: AzureOpenAI | null = null;
 function getWhisperClient() {
   if (!whisperClient) {
     whisperClient = new AzureOpenAI({
-      endpoint: process.env.AZURE_OPENAI_ENDPOINT,
-      apiKey: process.env.AZURE_OPENAI_API_KEY,
-      apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-10-21",
+      endpoint: process.env.AZURE_OPENAI_WHISPER_ENDPOINT,
+      apiKey: process.env.AZURE_OPENAI_WHISPER_API_KEY,
+      apiVersion: process.env.AZURE_OPENAI_WHISPER_API_VERSION || "2024-06-01",
       deployment: process.env.AZURE_OPENAI_WHISPER_DEPLOYMENT,
     });
   }
