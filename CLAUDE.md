@@ -107,6 +107,24 @@
 - 새 `CHILD_AUTH_SECRET` 값 자체는 이 문서나 어떤 대화 로그에도 남기지 않는다 — Vercel Production/Preview 환경변수(Sensitive)와 사용자의 로컬 `.env.local`에만 있다. **이번 일의 교훈: 이런 서버 전용 랜덤 시크릿은 생성한 즉시 비밀번호 매니저 등 사용자 본인이 접근 가능한 곳에 별도로 백업해둘 것 — Vercel Sensitive 변수는 쓰기 전용이라 잃어버리면 재발급(=기존 계정 전체 재설정) 외엔 복구 방법이 없다.**
 - 검증: `signInWithPassword`를 anon 키로 직접 호출해 데모 첫째/황유니/고아린 세 계정 전부 새 시크릿 기준 비밀번호로 실제 로그인 성공하는 것까지 확인함(스크립트는 검증 후 삭제, 서비스 롤 키를 코드베이스에 남기지 않음).
 
+**후속: "twin" Azure OpenAI 리소스 삭제 → reading-buddy 리소스 재사용으로 AI 기능 복구 (2026-09-13, 같은 날)**
+
+사용자가 "AI 리소스가 삭제됐을 것"이라고 추측 — 실제로 사진 AI 분석을 호출해보니 `404 DeploymentNotFound`(Azure OpenAI 배포가 존재하지 않음)로 확인됐다. Azure Portal 리소스 목록에 twin-choice 전용 Azure OpenAI 리소스가 더는 없었다(reading-buddy 쪽 CLAUDE.md에 "같은 구독의 다른 리소스(twin_choice의 twin)"라고 언급됐던 그 리소스). 새 리소스를 만드는 대신, 이미 살아있는 자매 프로젝트(reading-buddy)의 Azure 리소스를 재사용하기로 함.
+
+- **메인 AI(사진 분석/비교/관찰요약/우선순위 제안)**: `reading-buddy-openai` 리소스의 기존 `gpt-4o` 배포를 그대로 재사용. `gpt-4o`는 비전+function calling을 지원하고 `max_tokens` 파라미터도 그대로 받아줘서(최신 모델과 달리) **twin-choice 코드는 전혀 수정하지 않고** 환경변수(`AZURE_OPENAI_ENDPOINT`/`AZURE_OPENAI_API_KEY`/`AZURE_OPENAI_DEPLOYMENT`)만 그 리소스로 교체.
+- **음성 인식("왜 이게 좋아?")**: Whisper 모델이 이 Azure OpenAI 리소스의 리전(Korea Central)에서 배포 자체가 불가능해서(오디오 계열 모델은 리전 지원이 훨씬 좁음), Whisper 대신 **Azure AI Speech**로 전환 — reading-buddy가 이미 검증해둔 `reading-buddy-speech` 리소스와 그 코드 패턴(`azureSpeech.ts`, `pcmRecorder.ts`)을 그대로 포팅함:
+  - `src/lib/azureSpeech.ts` 신규(reading-buddy와 동일) — Azure AI Speech 단문 인식 REST API 호출, `AZURE_SPEECH_REGION`/`AZURE_SPEECH_KEY` 사용.
+  - `src/lib/pcmRecorder.ts` 신규(reading-buddy와 동일) — 브라우저 기본 `MediaRecorder`(webm/opus)를 이 REST API가 거부해서, Web Audio API로 16kHz mono WAV를 직접 인코딩한다. `VoiceReasonRecorder.tsx`가 이제 이걸 쓴다.
+  - `src/lib/azureOpenAI.ts`의 Whisper 관련 코드(`getWhisperClient`/`transcribeVoice`, `AZURE_OPENAI_WHISPER_*` 환경변수)는 완전히 제거.
+- 두 리소스 모두 자격 증명은 사용자가 Azure Portal에서 직접 확인해 알려줬고(엔드포인트/키), `gpt-4o` 배포명은 실제로 candidate 이름 몇 개를 호출해봐서(`gpt-4o` → 200, 그 외 → `DeploymentNotFound`) 정확한 이름을 확인했다.
+- **비용/쿼터 참고**: 이제 두 프로젝트(twin-choice, reading-buddy)가 같은 Azure 리소스를 공유한다 — 트래픽이 늘면 서로의 요청 지연/쿼터에 영향을 줄 수 있다. 개인 프로젝트 두 개라 지금은 비용 절감이 이 트레이드오프보다 이득이라고 판단했지만, 나중에 한쪽 트래픽이 커지면 분리를 재검토할 것.
+- **진단 중 발견한 진짜 버그(리소스 삭제와 무관하게 존재했음)**: `/api/rounds/[id]/compare`가 AI 호출 실패를 전혀 처리하지 않아서, 실패하면 클라이언트의 `matchResult`가 `null`로 영원히 남아 "AI가 비교하는 중..." 스피너에서 **재시도 없이 멈춘다** — 사진/자유 라벨로 고른 라운드의 공개 흐름이 완전히 막히는 심각한 버그였다. 같은 문제가 `classify-photo`/`observation-report`/`priority-suggestion`에도 있었다(AI 실패 시 무조건 500 크래시). 전부 고침:
+  - `compare`: AI 비교 실패 시 `matched=false`로 기본값 처리(안전한 쪽 — 실제로 같은 걸 골랐어도 조율을 한 번 더 하는 게, 다른 걸 골랐는데 "같음"으로 잘못 판정해 조율을 건너뛰는 것보다 낫다).
+  - `classify-photo`: AI 라벨링 실패 시 기존 "confidence 낮음" 경로와 동일하게 처리 — 사진은 그대로 저장하고 자녀가 직접 라벨을 입력하게 한다.
+  - `observation-report`/`priority-suggestion`: AI 실패를 "데이터 부족"(`available:false`)과 구분되는 에러(502)로 반환 — 이전엔 둘 다 뭉뚱그려져서 데이터가 충분한데도 "아직 데이터가 부족해요"라는 잘못된 안내가 뜰 뻔했다.
+  - 네 곳 모두 `console.error`로 실제 에러를 로그에 남기게 함 — 이번 진단 때 `transcribe-reason`의 조용한 catch 때문에 원인을 못 봐서 애먹었던 것과 같은 문제가 재발하지 않게.
+- 검증: 배포된 사이트에서 실제 사진 분석(`classify-photo`, 200 응답), 실제 음성 인식(`transcribe-reason`, 무음 테스트 오디오에 대해 "무슨 말인지 알아듣지 못했어요" — 정상적인 인식 실패 응답) 양쪽 다 실제 Azure 호출이 성공하는 것까지 확인함. `npm run test`(25개 통과), `npx tsc --noEmit` 통과.
+
 ### AI 패턴 관찰 리포트 (Phase 2, 4번 — 프레이밍 원칙 확정)
 
 **목적**: 부모가 쌓인 선택·양보 데이터를 보고 "우리 아이가 정서적으로 건강하게 크고 있는지" 감을 잡도록 돕는다. 앱의 1차 목표는 여전히 아이들의 재사용(게임성)이고, 이 기능은 그 데이터를 부모 쪽에서 부가적으로 해석해주는 것일 뿐 — 아이들 경험을 감시처럼 느껴지게 만들면 안 된다.
