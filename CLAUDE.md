@@ -188,6 +188,7 @@ RLS 정책 예시 방향(의사코드):
 - [docs/BRIEF.md](docs/BRIEF.md) — 프로젝트 5분 요약
 - [docs/STORIES.md](docs/STORIES.md) — 기능 단위 사용자 스토리(전부 구현 완료 상태)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 실제 구현 기준 기술 아키텍처(PRD 최초 계획과 다른 부분 정리)
+- [docs/NEW_APP_TOKEN_EFFICIENCY_GUIDE.md](docs/NEW_APP_TOKEN_EFFICIENCY_GUIDE.md) — 이 프로젝트만을 위한 게 아니라 **다음 신규 프로젝트를 시작할 때 그대로 복사해 갈 메타 가이드**. twin-choice/reading-buddy 두 프로젝트의 실제 세션에서 토큰을 낭비한 사례와 절약한 패턴을 근거로 정리함.
 - **기존 프로토타입**: 블라인드 선택/조율 UI·로직의 1차 검증 버전(브라우저 저장소 기반, 정식 인증 없음). 이 프로젝트에 `reference/` 폴더로 복사해두고 UI·상태 흐름 참고용으로만 사용 — 저장 로직은 Supabase로 전면 교체.
 - 자매 앱 `reading-buddy` — 같은 인증/RLS 패턴을 공유하는 저장소, 서로 개선 사항을 역이식하는 관계(2026-09-13 절 참고)
 
