@@ -87,9 +87,7 @@ export default function ChildLoginPage() {
 
   function onPinDigit(digit: string) {
     if (pin.length >= 4) return;
-    const next = pin + digit;
-    setPin(next);
-    if (next.length === 4) submitPin(next);
+    setPin(pin + digit);
   }
 
   if (step === "code") {
@@ -195,6 +193,13 @@ export default function ChildLoginPage() {
           ⌫
         </button>
       </div>
+      <button
+        className="btn btn-primary mx-auto mt-4 w-full max-w-[280px]"
+        disabled={loading || pin.length !== 4}
+        onClick={() => submitPin(pin)}
+      >
+        {loading ? "확인하는 중..." : "확인"}
+      </button>
     </div>
   );
 }

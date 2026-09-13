@@ -6,9 +6,11 @@ import { childProfileEmail, deriveChildAuthPassword, hashPinForDisplay, isValidP
 
 async function requireParent() {
   const supabase = createClient();
+  // middleware.ts가 이미 getUser()로 세션을 검증/갱신했으므로 여기서는 로컬 getSession()으로 읽는다.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) return { error: "로그인이 필요해요.", status: 401 as const };
 
   const { data: profile } = await supabase

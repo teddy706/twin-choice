@@ -15,9 +15,11 @@ const WINDOW_LABEL = "최근 2주";
 // 선택한 방향이다). 다만 로그인은 필요하고, 항상 부모가 버튼을 눌렀을 때만 호출된다(원칙 7).
 export async function POST() {
   const supabase = createClient();
+  // middleware.ts가 이미 getUser()로 세션을 검증/갱신했으므로 여기서는 로컬 getSession()으로 읽는다.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) return NextResponse.json({ error: "로그인이 필요해요." }, { status: 401 });
 
   const { data: profile } = await supabase

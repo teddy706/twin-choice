@@ -14,9 +14,11 @@ function guessMediaType(storagePath: string): "image/jpeg" | "image/png" | "imag
 // 결과는 rounds.ai_matched 에 캐싱해서 두 자녀가 각자 다시 계산하지 않게 한다.
 export async function POST(_request: Request, { params }: { params: { id: string } }) {
   const supabase = createClient();
+  // middleware.ts가 이미 getUser()로 세션을 검증/갱신했으므로 여기서는 로컬 getSession()으로 읽는다.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) return NextResponse.json({ error: "로그인이 필요해요." }, { status: 401 });
 
   const { data: profile } = await supabase

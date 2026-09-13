@@ -15,9 +15,13 @@ export type ProfileWithAvatar = Profile & { avatarUrl: string | null };
 // 그 목록을 조회하는 화면에서 각자 만든다: 예) ChildrenManager, 자녀 로그인 프로필 선택 화면).
 export async function getCurrentProfile(): Promise<ProfileWithAvatar | null> {
   const supabase = createClient();
+  // middleware.ts 가 모든 요청에서 이미 getUser()로 세션을 검증/갱신했으므로, 여기서는
+  // 같은 것을 다시 Auth 서버에 왕복해서 확인하지 않고 쿠키의 JWT를 로컬에서만 읽는
+  // getSession()을 쓴다(reading-buddy에서 같은 패턴으로 확인한 페이지 전환 지연 원인 중 하나).
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) return null;
 
   const { data: profile } = await supabase

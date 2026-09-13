@@ -27,6 +27,16 @@ export function isValidPin(pin: string) {
   return /^\d{4}$/.test(pin);
 }
 
+// PIN은 4자리(경우의 수 10000개)뿐이라 시도 횟수 제한이 없으면 /api/auth/child-login을
+// 반복 호출해 무차별 대입이 가능하다. 5회 연속 실패하면 1분간 로그인 시도를 막는다.
+export const PIN_MAX_ATTEMPTS = 5;
+export const PIN_LOCK_DURATION_MS = 60_000;
+
+export function isPinLocked(pinLockedUntil: string | null): boolean {
+  if (!pinLockedUntil) return false;
+  return new Date(pinLockedUntil).getTime() > Date.now();
+}
+
 // profiles.pin_hash 는 인증에 쓰이지 않고(위 derive 함수가 실제 비밀번호를 만든다),
 // 부모가 자녀 프로필 목록에서 "PIN을 잊었어요" 같은 흐름을 만들 때 대조용으로만 쓴다.
 export async function hashPinForDisplay(pin: string) {

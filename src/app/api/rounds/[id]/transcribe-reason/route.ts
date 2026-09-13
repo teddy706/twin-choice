@@ -11,9 +11,11 @@ const MAX_BASE64_LENGTH = 2_000_000;
 // "AI 결과는 명시적으로 확인해야 저장" 원칙). 오디오 자체는 여기서 변환에만 쓰고 어디에도 저장하지 않는다.
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const supabase = createClient();
+  // middleware.ts가 이미 getUser()로 세션을 검증/갱신했으므로 여기서는 로컬 getSession()으로 읽는다.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) return NextResponse.json({ error: "로그인이 필요해요." }, { status: 401 });
 
   const { data: profile } = await supabase

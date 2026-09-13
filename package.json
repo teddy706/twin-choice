@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "seed:demo": "tsx --env-file=.env.local scripts/seed-demo-family.ts"
+    "seed:demo": "tsx --env-file=.env.local scripts/seed-demo-family.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
@@ -33,6 +35,7 @@
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.4",
     "tsx": "^4.23.13",
-    "typescript": "^5.5.3"
+    "typescript": "^5.5.3",
+    "vitest": "^2.1.9"
   }
 }

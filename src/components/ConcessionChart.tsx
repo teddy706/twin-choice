@@ -29,7 +29,7 @@ export function ConcessionChart({ weekly, kids }: { weekly: WeekBucket[]; kids: 
 
   return (
     <div>
-      <div className="mb-2 flex gap-4">
+      <div className="mb-2 flex flex-wrap gap-4">
         {kids.map((c) => (
           <span key={c.id} className="flex items-center gap-1.5 text-xs font-semibold text-ink">
             <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: c.color }} />
