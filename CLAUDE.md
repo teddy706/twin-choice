@@ -181,11 +181,17 @@ RLS 정책 예시 방향(의사코드):
 - 양보 지수 집계는 별도 테이블 없이 `resolutions`/`rounds`를 그때그때 서버 컴포넌트에서 계산(`src/lib/concessionStats.ts`). **집계 결과는 행 단위 RLS로 못 숨기므로 반드시 role='parent' 확인 후 서버에서 계산하고 클라이언트로는 계산된 결과만 내려줄 것.**
 - `profiles` UPDATE: `role='parent'` + family 스코프(`0008_child_avatar_photos.sql`에서 처음 오픈). RLS는 행 단위까지만 막을 수 있어서, `role`/`pin_hash`/`family_id` 같은 민감 컬럼까지 열리지 않도록 컬럼 단위 GRANT로 `avatar`/`avatar_photo_path` 두 필드만 UPDATE 가능하게 추가로 좁혔다.
 
-## 참고 문서 (개발 착수 전 합의된 내용)
+## 참고 문서
 
-- **PRD**: 전체 요구사항, User Story, Success Metrics — https://claude.ai/code/artifact/b739e38e-055f-464f-b350-2a98213d2384
-- **개발 착수 전 결정 사항**: 배포형태·비용정책·확장성 설계의 근거 — https://claude.ai/code/artifact/c3811163-c11d-4f9a-a14b-0d6e8c99f8a9
+- [README.md](README.md) — 셋업/배포 가이드
+- [docs/PRD.md](docs/PRD.md) — 전체 요구사항, User Story, Success Metrics(원본은 개발 착수 전 Claude 아티팩트 2개였으나 2026-09-13에 저장소 로컬 문서로 통합·정리함 — 원본 링크: [PRD](https://claude.ai/code/artifact/b739e38e-055f-464f-b350-2a98213d2384), [개발 착수 전 결정 사항](https://claude.ai/code/artifact/c3811163-c11d-4f9a-a14b-0d6e8c99f8a9))
+- [docs/BRIEF.md](docs/BRIEF.md) — 프로젝트 5분 요약
+- [docs/STORIES.md](docs/STORIES.md) — 기능 단위 사용자 스토리(전부 구현 완료 상태)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 실제 구현 기준 기술 아키텍처(PRD 최초 계획과 다른 부분 정리)
 - **기존 프로토타입**: 블라인드 선택/조율 UI·로직의 1차 검증 버전(브라우저 저장소 기반, 정식 인증 없음). 이 프로젝트에 `reference/` 폴더로 복사해두고 UI·상태 흐름 참고용으로만 사용 — 저장 로직은 Supabase로 전면 교체.
+- 자매 앱 `reading-buddy` — 같은 인증/RLS 패턴을 공유하는 저장소, 서로 개선 사항을 역이식하는 관계(2026-09-13 절 참고)
+
+이 CLAUDE.md는 계속 "세션별 작업 로그"(무엇을 언제 왜 했는지, 발견한 함정/교훈) 역할을 유지하고, 구조적으로 정리된 최신 상태는 위 `docs/` 문서들이 담당한다(reading-buddy와 동일한 관례) — **새 기능을 구현하면 CLAUDE.md에 로그를 남기는 것과 별개로, docs/STORIES.md에 스토리를, 아키텍처가 바뀌었으면 docs/ARCHITECTURE.md도 갱신할 것.**
 
 ## 코딩 시 주의사항
 
