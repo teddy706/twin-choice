@@ -50,7 +50,7 @@
 이 앱을 만든 근본 동기(쌍둥이 사이 부모의 중립 유지 + 양보하는 마음과 자기 의견을 조리있게 말하는 성장을 AI가 중립적으로 도와주는 것)를 다시 짚어보고 추가한 기능. 기존엔 탭 한 번으로 고르는 게 전부라 아이가 자기 생각을 말로 표현하는 순간이 없었다.
 
 - 자녀가 블라인드 선택을 낸 뒤 상대를 기다리는 화면(`RoundView.tsx`)에 `VoiceReasonRecorder`가 뜬다 — 완전히 선택적, 건너뛰어도 제출/공개 흐름에 전혀 지장 없음.
-- **음성 인식은 브라우저 자체 API가 아니라 녹음 → 서버에서 변환**하는 방식으로 확정(iOS Safari의 Web Speech API 지원이 역사적으로 들쭉날쭉해서 — 이 프로젝트가 실기기로 계속 검증해온 플랫폼과 안 맞음). **원래는 Azure OpenAI Whisper였으나 2026-09-13에 Azure AI Speech로 교체됨** — 아래 "reading-buddy 개발 내역 반영"과 "twin Azure OpenAI 리소스 삭제" 절 참고.
+- **음성 인식은 브라우저 자체 API가 아니라 녹음 → 서버에서 Azure OpenAI Whisper로 변환**하는 방식으로 확정(iOS Safari의 Web Speech API 지원이 역사적으로 들쭉날쭉해서 — 이 프로젝트가 실기기로 계속 검증해온 플랫폼과 안 맞음). `AZURE_OPENAI_WHISPER_DEPLOYMENT` 환경변수로 기존 gpt-4o 배포와 별개의 Whisper 배포를 가리킨다.
 - **아이 목소리 자체는 어디에도 저장하지 않는다** — `/api/rounds/[id]/transcribe-reason`이 변환만 하고 오디오는 그 자리에서 버린다. 사진과 달리 목소리는 더 민감한 데이터로 취급(개인정보 최소화 원칙의 연장).
 - 변환된 텍스트는 AI가 만든 다른 결과물과 동일하게 **자녀가 확인해야 저장된다**(코딩 시 주의사항 6번과 같은 원칙) — 자동 저장 안 함.
 - `choices.reason` 컬럼에 저장(`0012_choice_reason.sql`). 이 테이블은 그동안 UPDATE 정책이 전혀 없었는데, 본인 소유 선택에 한해 `reason`만 고칠 수 있게 새로 열면서 `item_id`/`label`/`photo_id`는 컬럼 단위 GRANT로 여전히 못 바꾸게 막았다(`0008_child_avatar_photos.sql`의 profiles avatar 패턴 재사용).
@@ -89,18 +89,41 @@
 
 1. **자녀 PIN 로그인: 4자리 입력 즉시 자동 제출 → "확인" 버튼 방식으로 변경.** reading-buddy가 실사용 중 "PIN 4자리 누르자마자 서버로 넘어가서 응답 전까지 화면이 멈춘 것처럼 보인다"는 문제를 발견해 고쳤던 것과 정확히 같은 코드 패턴이 `/login/child`(`src/app/login/child/page.tsx`)에도 있었다. `onPinDigit()`이 4자리 채워지는 즉시 `submitPin()`을 호출하던 것을 제거하고, 키패드 아래에 "확인"(로딩 중 "확인하는 중...") 버튼을 추가해 그 버튼을 눌러야 제출되게 바꿨다.
 2. **자녀 PIN 브루트포스 방지(5회 실패 시 1분 잠금) 추가.** reading-buddy는 이 정책을 twin-choice의 인증 패턴을 재사용하면서 "twin_choice에는 없는 재량 추가"로 넣었던 것 — 이번에 twin-choice에도 역으로 가져왔다. `profiles.pin_fail_count`/`pin_locked_until`(`0013_pin_lockout.sql`, **사용자가 Supabase SQL Editor에서 직접 실행해야 실제 DB에 반영됨** — 다른 마이그레이션과 동일한 관례) 추가, `src/lib/childAuth.ts`에 `PIN_MAX_ATTEMPTS`/`PIN_LOCK_DURATION_MS`/`isPinLocked()` 추가. `/api/auth/child-login`이 admin 클라이언트로 실패 시 카운트 증가(5회째에 잠금), 성공 시 리셋한다.
-3. **Vercel 서버 함수 리전 고정.** reading-buddy는 `x-vercel-id` 헤더로 서버 함수가 Supabase 리전과 다른 곳(버지니아)에서 실행되던 걸 발견해 `vercel.json`으로 서울(icn1) 고정 — reading-buddy 문서가 "twin_choice에서도 같은 걸 느꼈다고 함"이라고 명시했던 부분이다. `vercel.json`을 신규 생성해 `regions: ["icn1"]` 지정.
-4. **인증 이중 확인 제거.** `src/middleware.ts`가 모든 요청(API 라우트 포함)에서 이미 `getUser()`로 세션을 검증/갱신하고 있는데, 그 위에서 `getCurrentProfile()`(`src/lib/currentProfile.ts`)과 API 라우트 10곳이 각자 또 `getUser()`를 호출해 Supabase Auth 서버에 불필요한 왕복을 만들고 있었던 것 — reading-buddy가 문서화한 "페이지 전환이 느리다"의 원인 중 하나(이중 인증 확인)와 정확히 같은 구조. 미들웨어가 이미 검증을 마쳤으므로 그 뒤의 모든 지점을 네트워크 왕복 없이 쿠키의 JWT를 로컬에서만 읽는 `getSession()`으로 통일했다. 실제 로그인을 시도하는 `/api/auth/child-login`(synthetic 계정 `signInWithPassword`)은 세션 확인이 아니라 인증 자체라 그대로 뒀다.
-5. **Vitest 유닛 테스트 인프라 도입.** reading-buddy와 동일하게 외부 의존성 없는 순수 함수부터 시작 — `vitest@^2.1.9`, `vitest.config.mts`가 `server-only`를 빈 스텁(`test/stubs/server-only.ts`)으로 alias. `npm run test`. 첫 테스트 25개: `tilePalette.test.ts`, `joinCode.test.ts`, `childAuth.test.ts`, `concessionStats.test.ts`, `observationSafety.test.ts`. 목표는 전체 커버리지가 아니라 인프라를 갖추고 대표 파일에 붙이는 것 — 앞으로 새 순수 로직을 추가할 때 계속 보강할 것.
-6. **모바일 오버플로우 점검.** reading-buddy는 flex 행 안의 `<input>`/`<textarea>`가 고정폭 형제 요소와 나란히 있는데 `min-w-0`이 없어 좁은 화면에서 넘치는 버그를 3건 찾았다. twin-choice는 같은 기준으로 훑었으나 전부 `w-full`로 단독 배치돼 있어 그 정확한 버그는 없었고, `ConcessionChart` 범례에 예방 차원으로 `flex-wrap`만 추가했다.
+3. **Vercel 서버 함수 리전 고정.** reading-buddy는 `x-vercel-id` 헤더로 서버 함수가 Supabase 리전과 다른 곳(버지니아)에서 실행되던 걸 발견해 `vercel.json`으로 서울(icn1) 고정 — reading-buddy 문서가 "twin_choice에서도 같은 걸 느꼈다고 함"이라고 명시했던 부분이다. `vercel.json`을 신규 생성해 `regions: ["icn1"]` 지정. **Supabase 프로젝트가 실제로 서울 리전인지는 아직 확인 안 됨 — 배포 후 사용자가 `x-vercel-id` 응답 헤더로 실제 반영 여부/효과를 확인해야 한다.**
+4. **인증 이중 확인 제거 (계획에 없었다가 재조사로 추가됨).** 원래는 "twin-choice엔 미들웨어가 없어서 해당 없음"이라고 판단했었는데, 실제로는 `src/middleware.ts`가 모든 요청(API 라우트 포함)에서 이미 `getUser()`로 세션을 검증/갱신하고 있었다(레포 루트에서만 `middleware.ts`를 찾다가 처음에 놓침). 그 위에서 `getCurrentProfile()`(`src/lib/currentProfile.ts`)과 API 라우트 10곳이 각자 또 `getUser()`를 호출해 Supabase Auth 서버에 불필요한 왕복을 만들고 있었던 것 — reading-buddy가 문서화한 "페이지 전환이 느리다"의 원인 중 하나(이중 인증 확인)와 정확히 같은 구조. 미들웨어가 이미 검증을 마쳤으므로 그 뒤의 모든 지점을 네트워크 왕복 없이 쿠키의 JWT를 로컬에서만 읽는 `getSession()`으로 통일했다(`getCurrentProfile()` + `/api/dashboard/observation-report`, `/api/children`, `/api/children/[id]`, `/api/rounds/[id]/{classify-photo,transcribe-reason,compare}`, `/api/push/{notify,subscribe,unsubscribe}`, `/api/history/priority-suggestion`, 루트 `/page.tsx`). 실제 로그인을 시도하는 `/api/auth/child-login`(synthetic 계정 `signInWithPassword`)은 세션 확인이 아니라 인증 자체라 그대로 뒀다.
+5. **Vitest 유닛 테스트 인프라 도입.** reading-buddy와 동일하게 외부 의존성 없는 순수 함수부터 시작 — `vitest@^2.1.9`(reading-buddy가 최신 5.x의 `@types/node@^22` peer 요구와 이 프로젝트의 `@types/node@^20` 충돌을 피하려 고정했던 것과 같은 이유로 동일 버전 사용), `vitest.config.mts`가 `server-only`를 빈 스텁(`test/stubs/server-only.ts`)으로 alias(이 패키지가 react-server 조건 없는 Node 런타임=vitest에서 import되면 항상 예외를 던지기 때문 — reading-buddy에서 찾은 것과 같은 우회). `npm run test`. 첫 테스트 25개: `tilePalette.test.ts`, `joinCode.test.ts`, `childAuth.test.ts`(PIN 검증/결정론성/잠금 판정), `concessionStats.test.ts`(양보 지수 집계), `observationSafety.test.ts`(금지어 필터). 목표는 전체 커버리지가 아니라 인프라를 갖추고 대표 파일에 붙이는 것 — 앞으로 새 순수 로직을 추가할 때 계속 보강할 것(reading-buddy도 4개 파일 31개로 시작해 74개까지 늘어났다).
+6. **모바일 오버플로우 점검.** reading-buddy는 flex 행 안의 `<input>`/`<textarea>`가 고정폭 형제 요소와 나란히 있는데 `min-w-0`이 없어 좁은 화면에서 넘치는 버그를 3건 찾았다. twin-choice의 모든 input(`CategoriesManager`/`ItemsManager`/`ChildrenManager`/`PhotoArchive`/`RoundView`)을 같은 기준으로 훑었으나 **전부 `w-full`로 단독 배치돼 있어 그 정확한 버그 패턴은 없었다.** `ConcessionChart`(주간 양보 추이, `src/components/ConcessionChart.tsx`)의 SVG 막대는 이미 자녀 수에 따라 폭이 동적으로 계산되고 `overflow-x-auto`로 감싸져 있어 reading-buddy가 겪었던(고정 `w-3` 픽셀 막대) 문제 자체가 없었지만, 범례(`flex gap-4`)는 자녀가 늘어나면 줄바꿈 없이 옆으로 넘칠 수 있어 예방 차원에서 `flex-wrap` 한 줄만 추가했다(실제 신고된 버그는 아님).
 
-**후속: "twin" Azure OpenAI 리소스 삭제 → reading-buddy 리소스 재사용으로 AI 기능 복구 (2026-09-13)**
+**이번에 보류한 것(Tier 2, 필요시 별도 요청)**: 부모 화면 태블릿/PC 반응형 확장(reading-buddy가 `.app-shell` 고정폭을 부모 화면부터 단계적으로 넓힌 것과 동일 구조가 twin-choice에도 있지만, 화면별 그리드 재조정이 필요한 별도 프로젝트급 작업), CLAUDE.md → ARCHITECTURE/BRIEF/STORIES 문서 분리(순수 문서 작업, 사용자 선호 확인 필요).
 
-사용자가 "AI 리소스가 삭제됐을 것"이라고 추측 — 실제로 사진 AI 분석을 호출해보니 `404 DeploymentNotFound`로 확인됐다. 새 리소스를 만드는 대신, 이미 살아있는 자매 프로젝트(reading-buddy)의 Azure 리소스를 재사용했다.
+**검증 한계**: 이 세션 환경에 `.env.local`(실제 Supabase 키)이 없어 `npm run dev`로 PIN 로그인/잠금 흐름을 실제 브라우저로 끝까지 확인하지 못했다 — `npm run test`(25개 전부 통과) + `npx tsc --noEmit`(에러 없음)으로만 검증했다. **사용자가 실제 환경에서 `/login/child` PIN 확인 버튼 흐름과 5회 실패 잠금을 직접 확인하고, Supabase SQL Editor에서 `0013_pin_lockout.sql`을 실행해야 한다.**
 
-- **메인 AI**: `reading-buddy-openai`의 기존 `gpt-4o` 배포 재사용(코드 변경 없음, 환경변수만 교체).
-- **음성 인식**: Whisper가 이 리전(Korea Central)에서 배포 불가라 `reading-buddy-speech`(Azure AI Speech)로 전환 — `src/lib/azureSpeech.ts`/`src/lib/pcmRecorder.ts` 신규(브라우저 기본 녹음 포맷을 이 API가 거부해서 16kHz WAV로 직접 인코딩), `azureOpenAI.ts`의 Whisper 관련 코드는 제거.
-- **진단 중 발견한 진짜 버그**: `/api/rounds/[id]/compare`가 AI 실패를 전혀 처리하지 않아서, 실패하면 클라이언트가 "비교하는 중..." 스피너에서 재시도 없이 멈추는 심각한 버그였다. `classify-photo`/`observation-report`/`priority-suggestion`도 마찬가지로 AI 실패 시 무조건 크래시하던 것을 전부 안전하게 폴백하도록 고쳤다(자세한 내용은 아래 데이터 모델 이후 절 대신 CLAUDE.md 참고 — 이 문서는 요약만 유지).
+**후속: 실제 배포 사이트로 검증 + CHILD_AUTH_SECRET 분실/재발급 (2026-09-13, 같은 날)**
+
+위 항목들을 실제로 검증하려고 `vercel link` + `vercel env pull`로 프로덕션 환경변수를 로컬에 받아왔는데, `CHILD_AUTH_SECRET`/`SUPABASE_SERVICE_ROLE_KEY`가 Vercel에 "Sensitive"로 등록돼 있어 **소유자도 CLI로 다시 못 읽어온다**는 걸 이번에 처음 확인했다(값을 아는 사람이 아무도 없으면 원본이 영구히 사라지는 구조 — `openssl rand -hex 32`로 만들어 Vercel에만 넣고 따로 저장해두지 않았던 게 이번에 실제로 문제가 됨). `SUPABASE_SERVICE_ROLE_KEY`는 Supabase 대시보드에서 다시 볼 수 있어 해결됐지만, `CHILD_AUTH_SECRET`은 사용자도 저장해둔 곳이 없어 **분실 확정** — 새로 생성하기로 결정함.
+
+- 이 값을 바꾸면 PIN→비밀번호 파생 결과가 전부 달라져서, **이미 만들어진 모든 자녀 계정의 로그인이 한꺼번에 끊긴다**(가족이 몇 개든 예외 없음). 실제로 이 프로젝트엔 데모 가족 외에 진짜 가족 2개(가족 코드는 이 문서에 남기지 않음)가 있었고, 그중 하나는 사용자가 개발 중 만든 테스트 계정(자녀 "첫째테스트"/"둘째테스트")이었다.
+- 새 시크릿으로 교체(Vercel Production/Preview 환경변수 갱신 + 재배포)한 뒤, PIN을 알고 있는 계정만 복구했다: 데모 가족(PIN 1111/2222, 공개된 값)과 실제 가족의 자녀 2명(사용자가 현재 PIN을 직접 알려줌)의 Supabase Auth 비밀번호를 새 시크릿 기준으로 재계산해 `admin.auth.admin.updateUserById()`로 갱신. **"첫째테스트"/"둘째테스트"는 사용자가 "신경 안 써도 된다"고 확인해 복구하지 않고 그대로 뒀다** — 필요해지면 그 프로필을 지우고 새로 만들면 된다(PIN을 몰라서 되살릴 방법 자체가 없음).
+- 새 `CHILD_AUTH_SECRET` 값 자체는 이 문서나 어떤 대화 로그에도 남기지 않는다 — Vercel Production/Preview 환경변수(Sensitive)와 사용자의 로컬 `.env.local`에만 있다. **이번 일의 교훈: 이런 서버 전용 랜덤 시크릿은 생성한 즉시 비밀번호 매니저 등 사용자 본인이 접근 가능한 곳에 별도로 백업해둘 것 — Vercel Sensitive 변수는 쓰기 전용이라 잃어버리면 재발급(=기존 계정 전체 재설정) 외엔 복구 방법이 없다.**
+- 검증: `signInWithPassword`를 anon 키로 직접 호출해 데모 첫째/황유니/고아린 세 계정 전부 새 시크릿 기준 비밀번호로 실제 로그인 성공하는 것까지 확인함(스크립트는 검증 후 삭제, 서비스 롤 키를 코드베이스에 남기지 않음).
+
+**후속: "twin" Azure OpenAI 리소스 삭제 → reading-buddy 리소스 재사용으로 AI 기능 복구 (2026-09-13, 같은 날)**
+
+사용자가 "AI 리소스가 삭제됐을 것"이라고 추측 — 실제로 사진 AI 분석을 호출해보니 `404 DeploymentNotFound`(Azure OpenAI 배포가 존재하지 않음)로 확인됐다. Azure Portal 리소스 목록에 twin-choice 전용 Azure OpenAI 리소스가 더는 없었다(reading-buddy 쪽 CLAUDE.md에 "같은 구독의 다른 리소스(twin_choice의 twin)"라고 언급됐던 그 리소스). 새 리소스를 만드는 대신, 이미 살아있는 자매 프로젝트(reading-buddy)의 Azure 리소스를 재사용하기로 함.
+
+- **메인 AI(사진 분석/비교/관찰요약/우선순위 제안)**: `reading-buddy-openai` 리소스의 기존 `gpt-4o` 배포를 그대로 재사용. `gpt-4o`는 비전+function calling을 지원하고 `max_tokens` 파라미터도 그대로 받아줘서(최신 모델과 달리) **twin-choice 코드는 전혀 수정하지 않고** 환경변수(`AZURE_OPENAI_ENDPOINT`/`AZURE_OPENAI_API_KEY`/`AZURE_OPENAI_DEPLOYMENT`)만 그 리소스로 교체.
+- **음성 인식("왜 이게 좋아?")**: Whisper 모델이 이 Azure OpenAI 리소스의 리전(Korea Central)에서 배포 자체가 불가능해서(오디오 계열 모델은 리전 지원이 훨씬 좁음), Whisper 대신 **Azure AI Speech**로 전환 — reading-buddy가 이미 검증해둔 `reading-buddy-speech` 리소스와 그 코드 패턴(`azureSpeech.ts`, `pcmRecorder.ts`)을 그대로 포팅함:
+  - `src/lib/azureSpeech.ts` 신규(reading-buddy와 동일) — Azure AI Speech 단문 인식 REST API 호출, `AZURE_SPEECH_REGION`/`AZURE_SPEECH_KEY` 사용.
+  - `src/lib/pcmRecorder.ts` 신규(reading-buddy와 동일) — 브라우저 기본 `MediaRecorder`(webm/opus)를 이 REST API가 거부해서, Web Audio API로 16kHz mono WAV를 직접 인코딩한다. `VoiceReasonRecorder.tsx`가 이제 이걸 쓴다.
+  - `src/lib/azureOpenAI.ts`의 Whisper 관련 코드(`getWhisperClient`/`transcribeVoice`, `AZURE_OPENAI_WHISPER_*` 환경변수)는 완전히 제거.
+- 두 리소스 모두 자격 증명은 사용자가 Azure Portal에서 직접 확인해 알려줬고(엔드포인트/키), `gpt-4o` 배포명은 실제로 candidate 이름 몇 개를 호출해봐서(`gpt-4o` → 200, 그 외 → `DeploymentNotFound`) 정확한 이름을 확인했다.
+- **비용/쿼터 참고**: 이제 두 프로젝트(twin-choice, reading-buddy)가 같은 Azure 리소스를 공유한다 — 트래픽이 늘면 서로의 요청 지연/쿼터에 영향을 줄 수 있다. 개인 프로젝트 두 개라 지금은 비용 절감이 이 트레이드오프보다 이득이라고 판단했지만, 나중에 한쪽 트래픽이 커지면 분리를 재검토할 것.
+- **진단 중 발견한 진짜 버그(리소스 삭제와 무관하게 존재했음)**: `/api/rounds/[id]/compare`가 AI 호출 실패를 전혀 처리하지 않아서, 실패하면 클라이언트의 `matchResult`가 `null`로 영원히 남아 "AI가 비교하는 중..." 스피너에서 **재시도 없이 멈춘다** — 사진/자유 라벨로 고른 라운드의 공개 흐름이 완전히 막히는 심각한 버그였다. 같은 문제가 `classify-photo`/`observation-report`/`priority-suggestion`에도 있었다(AI 실패 시 무조건 500 크래시). 전부 고침:
+  - `compare`: AI 비교 실패 시 `matched=false`로 기본값 처리(안전한 쪽 — 실제로 같은 걸 골랐어도 조율을 한 번 더 하는 게, 다른 걸 골랐는데 "같음"으로 잘못 판정해 조율을 건너뛰는 것보다 낫다).
+  - `classify-photo`: AI 라벨링 실패 시 기존 "confidence 낮음" 경로와 동일하게 처리 — 사진은 그대로 저장하고 자녀가 직접 라벨을 입력하게 한다.
+  - `observation-report`/`priority-suggestion`: AI 실패를 "데이터 부족"(`available:false`)과 구분되는 에러(502)로 반환 — 이전엔 둘 다 뭉뚱그려져서 데이터가 충분한데도 "아직 데이터가 부족해요"라는 잘못된 안내가 뜰 뻔했다.
+  - 네 곳 모두 `console.error`로 실제 에러를 로그에 남기게 함 — 이번 진단 때 `transcribe-reason`의 조용한 catch 때문에 원인을 못 봐서 애먹었던 것과 같은 문제가 재발하지 않게.
+- 검증: 배포된 사이트에서 실제 사진 분석(`classify-photo`, 200 응답), 실제 음성 인식(`transcribe-reason`, 무음 테스트 오디오에 대해 "무슨 말인지 알아듣지 못했어요" — 정상적인 인식 실패 응답) 양쪽 다 실제 Azure 호출이 성공하는 것까지 확인함. `npm run test`(25개 통과), `npx tsc --noEmit` 통과.
 
 ### AI 패턴 관찰 리포트 (Phase 2, 4번 — 프레이밍 원칙 확정)
 
@@ -125,8 +148,7 @@
 
 ```sql
 families(id, name, created_at)
-profiles(id, family_id, role[parent|child], name, avatar, avatar_photo_path[nullable],
-         pin_hash, pin_fail_count, pin_locked_until, created_at)
+profiles(id, family_id, role[parent|child], name, avatar, avatar_photo_path[nullable], pin_hash, created_at)
   -- avatar_photo_path 있으면 그 사진을, 없으면 avatar 이모지를 보여준다(UI 폴백, src/components/Avatar.tsx).
 categories(id, family_id, name, emoji, is_active)
 items(id, category_id, name, emoji, is_active)
@@ -134,10 +156,8 @@ rounds(id, family_id, category_id, started_by, status[waiting|revealed|resolved]
        ai_matched[nullable bool], created_at)
   -- ai_matched: 공개 시점 AI 비교 결과 캐시. 그리드끼리만이면 계산할 필요 없이 null로 남아도 되고
   -- (클라이언트가 item_id로 바로 비교), 사진이 끼어 AI 비교를 한 번 거쳤다면 true/false로 고정된다.
-choices(id, round_id, profile_id, item_id[nullable], label[nullable], photo_id[nullable → photos],
-        reason[nullable], submitted_at)
+choices(id, round_id, profile_id, item_id[nullable], label[nullable], photo_id[nullable → photos], submitted_at)
   -- item_id 또는 label 중 최소 하나는 있어야 한다(그리드 선택 vs 사진/자유 입력 선택).
-  -- reason: "왜 이게 좋아?" 음성으로 남긴 이유(텍스트만, 오디오는 저장 안 함).
 resolutions(id, round_id, type[roulette|turn|both|manual|match], winner_profile_id, conceded_profile_id, resolved_at)
 photos(id, family_id, profile_id, round_id, item_id, storage_path, ai_category, ai_label, confirmed, created_at)
   -- Phase 1부터 "사진으로 고르기"에서 실제로 쓰임. 찍을 때마다 row가 생기고(재촬영해도 새 row),
@@ -171,7 +191,7 @@ RLS 정책 예시 방향(의사코드):
 - **기존 프로토타입**: 블라인드 선택/조율 UI·로직의 1차 검증 버전(브라우저 저장소 기반, 정식 인증 없음). 이 프로젝트에 `reference/` 폴더로 복사해두고 UI·상태 흐름 참고용으로만 사용 — 저장 로직은 Supabase로 전면 교체.
 - 자매 앱 `reading-buddy` — 같은 인증/RLS 패턴을 공유하는 저장소, 서로 개선 사항을 역이식하는 관계(2026-09-13 절 참고)
 
-이 문서는 계속 "세션별 작업 로그"(무엇을 언제 왜 했는지, 발견한 함정/교훈) 역할을 유지하고, 구조적으로 정리된 최신 상태는 위 `docs/` 문서들이 담당한다 — **새 기능을 구현하면 이 문서에 로그를 남기는 것과 별개로, docs/STORIES.md에 스토리를, 아키텍처가 바뀌었으면 docs/ARCHITECTURE.md도 갱신할 것.** (Claude Code용 CLAUDE.md와 이 AGENTS.md는 같은 내용을 유지해야 한다 — 한쪽만 갱신하고 잊지 말 것.)
+이 문서는 계속 "세션별 작업 로그"(무엇을 언제 왜 했는지, 발견한 함정/교훈) 역할을 유지하고, 구조적으로 정리된 최신 상태는 위 `docs/` 문서들이 담당한다(reading-buddy와 동일한 관례) — **새 기능을 구현하면 이 문서에 로그를 남기는 것과 별개로, docs/STORIES.md에 스토리를, 아키텍처가 바뀌었으면 docs/ARCHITECTURE.md도 갱신할 것.**
 
 ## 코딩 시 주의사항
 
@@ -179,8 +199,7 @@ RLS 정책 예시 방향(의사코드):
 2. **블라인드 유지**: 상대방이 제출하기 전, API 응답에 상대 선택 데이터를 절대 포함시키지 말 것(프론트에서 숨기는 방식 금지 — 응답 자체에서 제외).
 3. 사진 촬영 화면에는 "사람 없이 물건만 찍어주세요" 안내 문구를 항상 노출할 것 (Phase 1 "사진으로 고르기"부터 실사용됨).
 4. 새 마이그레이션 작성 시 `family_id` 없는 테이블을 추가하지 말 것.
-5. **사진으로 고른 선택은 항목 목록에 끼워맞추지 않는다.** `item_id`는 null로 두고 AI가 만든 자유 라벨(또는 자녀가 직접 입력한 라벨)을 `choices.label`에 저장한다. "같은 걸 골랐는지"는 공개 시점에 `/api/rounds/[id]/compare`가 판정하고, 그 결과(`rounds.ai_matched`)를 캐싱해 두 자녀가 각자 다시 계산하지 않게 한다. AI 비교 자체가 실패하면 `matched=false`로 안전하게 기본 처리한다(2026-09-13 추가 — 실패를 방치하면 클라이언트가 "비교하는 중..." 스피너에서 영원히 멈추는 버그가 있었음).
-6. AI가 제안한 라벨은 자녀가 명시적으로 확인(맞아요)해야 `choices`에 제출된다. confidence가 낮으면 확인 단계 없이 바로 자녀가 직접 라벨을 입력하게 한다 — AI 응답을 확인 없이 자동으로 제출하지 말 것. AI 라벨링 호출 자체가 실패해도 같은 수동 입력 경로로 자연스럽게 폴백해야 한다(사진 저장은 막지 않음).
+5. **사진으로 고른 선택은 항목 목록에 끼워맞추지 않는다.** `item_id`는 null로 두고 AI가 만든 자유 라벨(또는 자녀가 직접 입력한 라벨)을 `choices.label`에 저장한다. "같은 걸 골랐는지"는 공개 시점에 `/api/rounds/[id]/compare`가 판정하고, 그 결과(`rounds.ai_matched`)를 캐싱해 두 자녀가 각자 다시 계산하지 않게 한다.
+6. AI가 제안한 라벨은 자녀가 명시적으로 확인(맞아요)해야 `choices`에 제출된다. confidence가 낮으면 확인 단계 없이 바로 자녀가 직접 라벨을 입력하게 한다 — AI 응답을 확인 없이 자동으로 제출하지 말 것.
 7. 폰카메라 사진은 원본을 그대로 올리지 말 것. Vercel 서버리스 함수의 요청 본문 크기 제한(~4.5MB)에 걸리고 느려진다 — 브라우저에서 축소(최대 1024px)+재압축(JPEG) 후 업로드한다(`src/lib/imageResize.ts`).
 8. 항목 탭처럼 실패 가능성이 낮은 제출 액션은 낙관적 업데이트(먼저 화면을 넘기고 실패하면 되돌리기)로 처리해 네트워크 왕복 시간만큼 "느리게" 느껴지지 않게 한다.
-9. AI 호출(사진 분석/비교/관찰 요약/우선순위 제안/음성 인식) 실패는 항상 `console.error`로 로그를 남기고, 사용자에게는 핵심 흐름을 막지 않는 안전한 기본값이나 친절한 에러 메시지로 대응할 것 — 조용히 삼키면 다음에 진단하기 어렵고, 그대로 크래시하면 게임 진행이 멈춘다(2026-09-13 Azure 리소스 장애 대응에서 얻은 교훈).
