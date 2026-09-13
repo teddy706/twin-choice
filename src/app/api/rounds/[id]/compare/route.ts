@@ -85,7 +85,16 @@ export async function POST(_request: Request, { params }: { params: { id: string
       sides.push({ label: choice.label ?? "설명 없음", image });
     }
 
-    matched = await compareChoices(sides[0], sides[1]);
+    try {
+      matched = await compareChoices(sides[0], sides[1]);
+    } catch (err) {
+      // AI 비교가 실패하면 클라이언트는 matchResult===null인 채로 "비교하는 중..." 스피너에서
+      // 영원히 멈춘다(재시도 로직이 없음) — 그러느니 "다른 것"으로 판정해 조율 도구로 넘긴다.
+      // 실제로 같은 걸 골랐어도 조율 한 번 더 하는 건 사소한 불편이지만, 반대로 다른 걸 골랐는데
+      // "같음"으로 잘못 판정하면 조율 자체를 건너뛰게 되어 더 나쁘다 — 안전한 쪽(false)으로 기본값을 둔다.
+      console.error("compareChoices failed:", err instanceof Error ? err.message : err);
+      matched = false;
+    }
   }
 
   await supabase.from("rounds").update({ ai_matched: matched }).eq("id", round.id);

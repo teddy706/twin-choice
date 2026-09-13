@@ -1,6 +1,5 @@
 import "server-only";
 import { AzureOpenAI } from "openai/azure";
-import { toFile } from "openai/uploads";
 
 // "사진으로 고르기": 정해진 항목 목록에 억지로 끼워맞추지 않고, AI가 사진을 보고
 // 자유롭게 설명(라벨)한다. 같은 걸 골랐는지 판단은 공개 시점에 양쪽 사진(또는 사진+라벨)을
@@ -20,21 +19,9 @@ function getClient() {
   return client;
 }
 
-// 음성 "이유 남기기"용 Whisper는 별도 배포일 뿐 아니라 완전히 다른 Azure 리소스에 만들어졌다
-// (엔드포인트/키가 gpt-4o 쪽과 다름 + 오디오 API는 채팅 API와 API 버전 체계도 다름) —
-// 그래서 세 값(엔드포인트/키/버전) 전부 별도 환경변수로 분리한다.
-let whisperClient: AzureOpenAI | null = null;
-function getWhisperClient() {
-  if (!whisperClient) {
-    whisperClient = new AzureOpenAI({
-      endpoint: process.env.AZURE_OPENAI_WHISPER_ENDPOINT,
-      apiKey: process.env.AZURE_OPENAI_WHISPER_API_KEY,
-      apiVersion: process.env.AZURE_OPENAI_WHISPER_API_VERSION || "2024-06-01",
-      deployment: process.env.AZURE_OPENAI_WHISPER_DEPLOYMENT,
-    });
-  }
-  return whisperClient;
-}
+// 음성 "이유 남기기" 변환은 Whisper가 아니라 Azure AI Speech를 쓴다(src/lib/azureSpeech.ts) —
+// Whisper 모델은 이 프로젝트의 Azure OpenAI 리소스 리전에서 배포가 불가능해서, reading-buddy가
+// 이미 검증해둔 Azure AI Speech 리소스를 재사용하기로 함(twin_choice/CLAUDE.md 참고).
 
 type ImageInput = { imageBase64: string; mediaType: "image/jpeg" | "image/png" | "image/webp" };
 
@@ -280,19 +267,4 @@ export async function generateStartPrioritySuggestion(params: {
   if (!toolCall || toolCall.type !== "function") return "";
   const input = JSON.parse(toolCall.function.arguments) as { suggestion: string };
   return input.suggestion ?? "";
-}
-
-// "왜 이게 좋아?" 음성 녹음을 텍스트로 바꾼다. 호출하는 쪽(API 라우트)이 변환 직후 오디오를
-// 바로 버린다 — 이 함수도 오디오를 어디에도 저장하지 않고 텍스트만 반환한다.
-export async function transcribeVoice(audio: { buffer: Buffer; mediaType: string }): Promise<string> {
-  const extension = audio.mediaType.split("/")[1]?.split(";")[0] || "webm";
-  const file = await toFile(audio.buffer, `reason.${extension}`, { type: audio.mediaType });
-
-  const response = await getWhisperClient().audio.transcriptions.create({
-    file,
-    model: process.env.AZURE_OPENAI_WHISPER_DEPLOYMENT!,
-    language: "ko",
-  });
-
-  return (response.text ?? "").trim();
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { transcribeVoice } from "@/lib/azureOpenAI";
+import { transcribeAudio } from "@/lib/azureSpeech";
 
 // 음성 녹음(15초 상한이라 사진보다 훨씬 작음)을 base64로 받는다. 여유를 넉넉히 둬도
 // Vercel 서버리스 함수의 요청 본문 제한(~4.5MB)에 한참 못 미친다.
@@ -50,12 +50,16 @@ export async function POST(request: Request, { params }: { params: { id: string 
   }
 
   try {
-    const text = await transcribeVoice({ buffer: Buffer.from(audioBase64, "base64"), mediaType });
+    // 클라이언트(pcmRecorder.ts)가 항상 16kHz mono WAV로 인코딩해 보내므로, Azure AI Speech가
+    // 요구하는 정확한 content-type을 여기서 고정한다(클라이언트가 보낸 mediaType은 위에서
+    // "audio/*" 형식인지 검증하는 용도로만 쓰고, 실제 호출엔 이 값을 쓴다).
+    const text = await transcribeAudio(Buffer.from(audioBase64, "base64"), "audio/wav; codecs=audio/pcm; samplerate=16000");
     if (!text) {
       return NextResponse.json({ error: "무슨 말인지 잘 못 들었어요. 다시 말해줄래?" }, { status: 422 });
     }
     return NextResponse.json({ text });
-  } catch {
+  } catch (err) {
+    console.error("transcribeAudio failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "지금은 변환하지 못했어요. 잠시 후 다시 시도해줄래?" }, { status: 500 });
   }
 }

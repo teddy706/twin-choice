@@ -60,11 +60,20 @@ export async function POST() {
     return { name: c.name, concedeCount: count, concedeRatePct: Math.round((count / recentTotal) * 100) };
   });
 
-  const summary = await generateObservationSummary({
-    windowLabel: WINDOW_LABEL,
-    totalConceded: recentTotal,
-    children: childStats,
-  });
+  let summary: string;
+  try {
+    summary = await generateObservationSummary({
+      windowLabel: WINDOW_LABEL,
+      totalConceded: recentTotal,
+      children: childStats,
+    });
+  } catch (err) {
+    // 데이터가 부족한 것과 AI 호출 자체가 실패한 건 다른 상황이라 구분해서 알려준다 —
+    // 둘 다 available:false로 뭉치면 "데이터가 부족해요"라는 잘못된 안내가 뜬다(데이터는
+    // 충분한데 AI가 잠깐 안 됐을 뿐이므로). 클라이언트는 res.ok가 아니면 별도 에러 문구를 보여준다.
+    console.error("generateObservationSummary failed:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "지금은 요약을 만들지 못했어요." }, { status: 502 });
+  }
 
   if (!summary || containsBannedLanguage(summary)) {
     return NextResponse.json({ available: false, blocked: true });

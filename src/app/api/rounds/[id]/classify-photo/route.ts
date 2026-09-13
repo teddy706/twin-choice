@@ -62,8 +62,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
   const extension = mediaType.split("/")[1];
   const storagePath = `${profile.family_id}/${profile.id}/${round.id}-${Date.now()}.${extension}`;
 
+  // describePhoto가 실패해도(Azure 장애 등) 사진 저장 자체는 막지 않는다 — confidence가 낮을 때와
+  // 똑같이 "AI가 못 알아봤다"로 취급해 자녀가 직접 라벨을 입력하는 기존 경로로 자연스럽게 넘어간다.
   const [describeResult, uploadResult] = await Promise.all([
-    describePhoto({ imageBase64, mediaType, categoryName: category.name }),
+    describePhoto({ imageBase64, mediaType, categoryName: category.name }).catch((err) => {
+      console.error("describePhoto failed:", err instanceof Error ? err.message : err);
+      return { label: "", confidence: "low" as const };
+    }),
     supabase.storage
       .from("photos")
       .upload(storagePath, Buffer.from(imageBase64, "base64"), { contentType: mediaType }),

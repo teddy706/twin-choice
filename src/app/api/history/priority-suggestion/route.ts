@@ -62,11 +62,19 @@ export async function POST() {
   const [a, b] = childList.map((c) => ({ name: c.name, concedeCount: recentCountByChild[c.id] ?? 0 }));
   const suggestedChildName = a.concedeCount === b.concedeCount ? null : a.concedeCount > b.concedeCount ? a.name : b.name;
 
-  const suggestion = await generateStartPrioritySuggestion({
-    windowLabel: WINDOW_LABEL,
-    suggestedChildName,
-    children: [a, b],
-  });
+  let suggestion: string;
+  try {
+    suggestion = await generateStartPrioritySuggestion({
+      windowLabel: WINDOW_LABEL,
+      suggestedChildName,
+      children: [a, b],
+    });
+  } catch (err) {
+    // observation-report와 동일한 이유로 "데이터 부족"과 구분한다 — 클라이언트는 res.ok가
+    // 아니면 별도 에러 문구("지금은 제안을 만들지 못했어요")를 보여준다.
+    console.error("generateStartPrioritySuggestion failed:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "지금은 제안을 만들지 못했어요." }, { status: 502 });
+  }
 
   if (!suggestion || containsBannedLanguage(suggestion)) {
     return NextResponse.json({ available: false, blocked: true });

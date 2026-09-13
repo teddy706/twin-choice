@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { startPcmRecording, type PcmRecorder } from "@/lib/pcmRecorder";
 import { MicIcon } from "@/components/icons";
 
 type State =
@@ -40,24 +41,17 @@ export function VoiceReasonRecorder({
   initialReason: string | null;
 }) {
   const [state, setState] = useState<State>(initialReason ? { kind: "saved", text: initialReason } : { kind: "idle" });
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const pcmRecorderRef = useRef<PcmRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      recorder.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        void handleRecordingStopped(recorder.mimeType || "audio/webm");
-      };
-      mediaRecorderRef.current = recorder;
-      recorder.start();
+      streamRef.current = stream;
+      // 브라우저 기본 MediaRecorder(webm/opus)는 Azure AI Speech 단문 인식 API가 거부한다 —
+      // 16kHz mono WAV로 직접 인코딩하는 pcmRecorder를 쓴다(src/lib/pcmRecorder.ts 주석 참고).
+      pcmRecorderRef.current = startPcmRecording(stream);
       setState({ kind: "recording", seconds: 0 });
 
       let elapsed = 0;
@@ -73,12 +67,14 @@ export function VoiceReasonRecorder({
 
   function stopRecording() {
     if (timerRef.current) clearInterval(timerRef.current);
-    mediaRecorderRef.current?.stop();
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    const recorder = pcmRecorderRef.current;
+    if (!recorder) return;
+    void handleRecordingStopped(recorder.stop());
   }
 
-  async function handleRecordingStopped(mimeType: string) {
+  async function handleRecordingStopped(blob: Blob) {
     setState({ kind: "transcribing" });
-    const blob = new Blob(chunksRef.current, { type: mimeType });
     if (blob.size === 0) {
       setState({ kind: "error", message: "녹음이 안 됐어요. 다시 해볼래?" });
       return;
@@ -88,7 +84,7 @@ export function VoiceReasonRecorder({
       const res = await fetch(`/api/rounds/${roundId}/transcribe-reason`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioBase64, mediaType: mimeType }),
+        body: JSON.stringify({ audioBase64, mediaType: "audio/wav" }),
       });
       const data = await res.json();
       if (!res.ok) {
